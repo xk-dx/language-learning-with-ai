@@ -28,11 +28,14 @@ export interface AppState {
 
 export interface PracticeQuestion {
     wordId: string;
+    type?: 'meaning' | 'cloze';
     term: string;
     correctMeaning: string;
     options: string[];
     note: string;
     example: string;
+    contextNote?: string;
+    questionText?: string;
 }
 
 export interface PracticeSession {

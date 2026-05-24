@@ -9,8 +9,10 @@ import {
     getActiveList,
     shuffle,
     updateWordProgress,
-    generateSmartWords
+    generateSmartWords,
+    buildLocalReading
 } from './utils';
+import { fetchGeneratedWords, fetchWordCompletion, fetchReading, fetchImage, fetchQuizExtras } from './apiService';
 
 const STORAGE_KEY = 'wordpecker-mini-state-v1';
 const THEME_KEY = 'wordpecker-theme-v1';
@@ -151,6 +153,7 @@ function App() {
     const [quizSession, setQuizSession] = useState<PracticeSession>(() => buildSession(initialState.lists[0].words, 5));
     const [learnShowExplanationIndex, setLearnShowExplanationIndex] = useState<number | null>(null);
     const [quizShowExplanationIndex, setQuizShowExplanationIndex] = useState<number | null>(null);
+    const [learnSubTab, setLearnSubTab] = useState<'practice' | 'reading'>('practice');
     const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'));
     const messageTimer = useRef<number | null>(null);
 
@@ -215,8 +218,8 @@ function App() {
             return;
         }
 
-        setLearnSession(buildSession(activeList.words, Math.min(6, activeList.words.length || 1)));
-        setQuizSession(buildSession(activeList.words, Math.min(5, activeList.words.length || 1)));
+        setLearnSession(buildSession(activeList.words, activeList.words.length));
+        setQuizSession(buildSession(activeList.words, activeList.words.length));
         setLearnShowExplanationIndex(null);
         setQuizShowExplanationIndex(null);
     }, [state.activeListId, learnRound, quizRound]);
@@ -257,7 +260,7 @@ function App() {
         setActiveTab('lists');
     };
 
-    const handleAddWord = () => {
+    const handleAddWord = async () => {
         if (!activeList) {
             notify('先选择一个词表。');
             return;
@@ -269,7 +272,39 @@ function App() {
             return;
         }
 
-        setState((current) => addWordToList(current, activeList.id, term, wordMeaning));
+        let meaning = wordMeaning.trim();
+
+        // 释义为空时优先调用 AI 补全
+        if (!meaning) {
+            const completion = await fetchWordCompletion(term, activeList.context);
+            if (completion) {
+                meaning = completion.meaning;
+                // 用 AI 返回的内容直接创建单词（不走 buildAutoContent）
+                const newWord: WordItem = {
+                    id: createId('word'),
+                    term,
+                    meaning: completion.meaning,
+                    example: completion.example,
+                    note: completion.note,
+                    score: 20,
+                    mastered: false,
+                    createdAt: new Date().toISOString()
+                };
+                setState((current) =>
+                    updateList(current, activeList.id, (list) => ({
+                        ...list,
+                        words: [newWord, ...list.words]
+                    }))
+                );
+                setWordTerm('');
+                setWordMeaning('');
+                notify('单词已加入词表（AI 补全释义）。');
+                return;
+            }
+            // AI 不可用，交给 addWordToList 用 buildAutoContent 兜底
+        }
+
+        setState((current) => addWordToList(current, activeList.id, term, meaning));
         setWordTerm('');
         setWordMeaning('');
         notify('单词已加入词表。');
@@ -279,11 +314,19 @@ function App() {
     const [genCount, setGenCount] = useState(6);
     const [genDifficulty, setGenDifficulty] = useState<'basic' | 'intermediate' | 'advanced'>('intermediate');
     const [genResults, setGenResults] = useState<Array<any>>([]);
+    const [genLoading, setGenLoading] = useState(false);
 
-    const handleGenerateWords = () => {
+    const handleGenerateWords = async () => {
         if (!activeList) return notify('先选择一个词表以生成新词。');
-        const results = generateSmartWords(activeList.context || activeList.name, Math.min(Math.max(1, genCount), 20), genDifficulty);
+        setGenLoading(true);
+        notify('正在通过 AI 生成…');
+        const results = await fetchGeneratedWords(
+            activeList.context || activeList.name,
+            Math.min(Math.max(1, genCount), 20),
+            genDifficulty
+        );
         setGenResults(results);
+        setGenLoading(false);
         notify(`已生成 ${results.length} 个候选单词`);
     };
 
@@ -305,6 +348,91 @@ function App() {
         });
         notify(`已加入 ${genResults.length} 个单词`);
         setGenResults([]);
+    };
+
+    // Reading state
+    const [readingPassage, setReadingPassage] = useState('');
+    const [readingLoading, setReadingLoading] = useState(false);
+    const [showTranslation, setShowTranslation] = useState(false);
+
+    const handleGenerateReading = async () => {
+        if (!activeList || !activeList.words.length) return notify('当前词表还没有单词。');
+        setReadingLoading(true);
+        setReadingPassage('');
+        notify('正在生成短文…');
+
+        const terms = activeList.words.map((w) => w.term);
+        const result = await fetchReading(terms, activeList.context);
+
+        if (result) {
+            setReadingPassage(result.passage);
+            setReadingLoading(false);
+            notify('短文已生成。');
+        } else {
+            // fallback to local
+            const localText = buildLocalReading(activeList.words, activeList.context);
+            setReadingPassage(localText);
+            setReadingLoading(false);
+            notify('使用本地生成的示例段落。');
+        }
+    };
+
+    // Word image state
+    const [wordImageUrl, setWordImageUrl] = useState('');
+    const [wordImageLoading, setWordImageLoading] = useState(false);
+
+    const handleGenerateImage = async (term: string, context: string) => {
+        setWordImageUrl('');
+        setWordImageLoading(true);
+        const query = `${term} ${context}`;
+        const result = await fetchImage(query);
+        if (result) {
+            setWordImageUrl(result.url);
+        } else {
+            notify('未找到相关图片。');
+        }
+        setWordImageLoading(false);
+    };
+
+    const [quizGenerating, setQuizGenerating] = useState(false);
+
+    const handleGenerateQuiz = async () => {
+        if (!activeList || !activeList.words.length) return notify('当前词表还没有单词。');
+        setQuizGenerating(true);
+        notify('生成测验题…');
+
+        // 重置本地题目
+        setQuizRound((value) => value + 1);
+
+        // 等 state 更新后再拉取 AI 题
+        await new Promise((r) => setTimeout(r, 50));
+
+        const extras = await fetchQuizExtras(
+            activeList.words.map((w) => ({ term: w.term, meaning: w.meaning })),
+            activeList.context
+        );
+        if (extras.length > 0) {
+            const mapped = extras.filter((q) => q.type === 'cloze').map((q, i) => ({
+                wordId: `quiz_ai_${Date.now()}_${i}`,
+                type: 'cloze' as const,
+                term: q.term,
+                correctMeaning: q.correctMeaning,
+                options: q.options,
+                note: q.note,
+                example: q.example,
+                contextNote: q.contextNote ?? '选择适合空格的单词',
+                questionText: q.questionText
+            }));
+            if (mapped.length > 0) {
+                setQuizSession((current) => ({
+                    ...current,
+                    questions: [...current.questions, ...mapped]
+                }));
+            }
+        }
+
+        setQuizGenerating(false);
+        notify('测验题已生成。');
     };
 
     const handleDeleteList = (listId: string) => {
@@ -469,6 +597,52 @@ function App() {
         );
     };
 
+    const renderHighlightedPassage = (passage: string, words: WordItem[], showTrans: boolean) => {
+        // Sort terms by length descending to match longer terms first
+        const sorted = [...words].sort((a, b) => b.term.length - a.term.length);
+        const termMap = new Map(sorted.map((w) => [w.term.toLowerCase(), w]));
+
+        // Escape special regex chars in term
+        const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const pattern = sorted.map((w) => escapeRegex(w.term)).join('|');
+        if (!pattern) return <p>{passage}</p>;
+
+        const re = new RegExp(`\\b(${pattern})\\b`, 'gi');
+        const parts: Array<{ text: string; matched: boolean; wordInfo?: WordItem }> = [];
+        let lastIndex = 0;
+        let match: RegExpExecArray | null;
+
+        while ((match = re.exec(passage)) !== null) {
+            if (match.index > lastIndex) {
+                parts.push({ text: passage.slice(lastIndex, match.index), matched: false });
+            }
+            const matchedTerm = match[0];
+            const wordInfo = termMap.get(matchedTerm.toLowerCase());
+            parts.push({ text: matchedTerm, matched: true, wordInfo });
+            lastIndex = re.lastIndex;
+        }
+        if (lastIndex < passage.length) {
+            parts.push({ text: passage.slice(lastIndex), matched: false });
+        }
+
+        return (
+            <p className="reading-text">
+                {parts.map((part, i) =>
+                    part.matched ? (
+                        <span key={i} className="reading-highlight" title={showTrans && part.wordInfo ? part.wordInfo.meaning : ''}>
+                            {part.text}
+                            {showTrans && part.wordInfo && (
+                                <span className="reading-trans"> ({part.wordInfo.meaning})</span>
+                            )}
+                        </span>
+                    ) : (
+                        <span key={i}>{part.text}</span>
+                    )
+                )}
+            </p>
+        );
+    };
+
     const renderPracticePanel = (
         title: string,
         session: PracticeSession,
@@ -477,7 +651,7 @@ function App() {
         onReset: () => void,
         showExplanationImmediate: boolean = true,
         explanationVisible: boolean = true,
-        onRequestShowExplanation: () => void = () => {}
+        onRequestShowExplanation: () => void = () => { }
     ) => {
         if (!activeList) {
             return <div className="empty-state">先创建或选择一个词表。</div>;
@@ -527,7 +701,17 @@ function App() {
                     </div>
                     <span className="muted-pill">第 {session.currentIndex + 1} 题 / {session.questions.length} 题</span>
                 </div>
-                <p className="question-text">这个词在当前词表里的中文意思是什么？</p>
+                <p className="question-text">{currentQuestion.type === 'cloze' ? '选择适合填入空格的单词：' : (currentQuestion.contextNote ?? '这个词在当前词表里的中文意思是什么？')}</p>
+                {currentQuestion.type === 'cloze' && currentQuestion.questionText && (
+                    <div className="cloze-sentence">
+                        {currentQuestion.questionText.split('___').map((part, i, arr) => (
+                            <span key={i}>
+                                {part}
+                                {i < arr.length - 1 && <span className="cloze-blank">______</span>}
+                            </span>
+                        ))}
+                    </div>
+                )}
                 <div className="option-grid">
                     {currentQuestion.options.map((option) => {
                         const selected = session.selectedAnswer === option;
@@ -619,10 +803,10 @@ function App() {
                     </div>
                     <div className="hero-copy">
                         <div>
-                            <p className="eyebrow">中文最小版词汇学习应用</p>
-                            <h1>打开就能用的词表、学习和测验。</h1>
+                            <p className="eyebrow">词汇学习工具</p>
+                            <h1>词表、学习和测验</h1>
                             <p className="hero-text">
-                                这个版本只保留最核心的闭环：创建词表、添加单词、自动生成基础释义、做简单练习、查看进度。
+                                创建词表、添加单词、AI 释义、练习与进度追踪。
                             </p>
                         </div>
                         <div className="hero-stats">
@@ -640,7 +824,7 @@ function App() {
                             </div>
                         </div>
                     </div>
-                    <div className="message-line">{message || '本地存储已开启，刷新页面也会保留数据。'}</div>
+                    <div className="message-line">{message || '数据保存在本地浏览器中。'}</div>
                 </section>
 
                 <nav className="tab-nav panel">
@@ -660,13 +844,13 @@ function App() {
                 {activeTab === 'overview' && (
                     <section className="dashboard-grid">
                         <div className="panel intro-panel">
-                            <p className="eyebrow">项目节奏</p>
-                            <h2>先做最有价值的 4 件事</h2>
+                            <p className="eyebrow">快速上手</p>
+                            <h2>词表 → 加词 → 练习</h2>
                             <ol className="roadmap-list">
-                                <li>词表管理：创建词表、加词、删词</li>
-                                <li>自动释义：先用本地规则占位，后面接后端 AI</li>
-                                <li>学习练习：把单词记一遍、做一轮测验</li>
-                                <li>进度反馈：看每个词和每个词表的掌握度</li>
+                                <li>创建词表并选定场景</li>
+                                <li>手动或由 AI 生成新单词</li>
+                                <li>学习模式熟悉词义，测验模式检验掌握度</li>
+                                <li>进度页追踪每个词的掌握进度</li>
                             </ol>
                         </div>
                         <div className="panel intro-panel">
@@ -688,12 +872,19 @@ function App() {
                             </div>
                             <div className="overview-word-grid">
                                 {overviewWords.map((word) => (
-                                    <article key={word.id} className="overview-word-card">
+                                    <button key={word.id} type="button" className="overview-word-card" onClick={() => {
+                                        const list = state.lists.find((l) => l.words.some((w) => w.id === word.id));
+                                        if (list) {
+                                            setState((current) => ({ ...current, activeListId: list.id }));
+                                            setSelectedWordId(word.id);
+                                            setActiveTab('lists');
+                                        }
+                                    }}>
                                         <span className="word-tag">{word.mastered ? '已掌握' : '学习中'}</span>
                                         <h3>{word.term}</h3>
                                         <p>{word.meaning}</p>
                                         <small>{word.example}</small>
-                                    </article>
+                                    </button>
                                 ))}
                             </div>
                         </div>
@@ -775,7 +966,7 @@ function App() {
                                             </label>
                                             <label>
                                                 释义（可留空）
-                                                <input value={wordMeaning} onChange={(event) => setWordMeaning(event.target.value)} placeholder="留空时使用本地自动生成" />
+                                                <input value={wordMeaning} onChange={(event) => setWordMeaning(event.target.value)} placeholder="留空时使用ai自动生成" />
                                             </label>
                                         </div>
                                         <button className="primary-button" type="button" onClick={handleAddWord}>加入词表</button>
@@ -790,13 +981,22 @@ function App() {
                                             </label>
                                             <label style={{ flex: 2 }}>
                                                 难度
-                                                <select value={genDifficulty} onChange={(e) => setGenDifficulty(e.target.value as any)}>
-                                                    <option value="basic">入门</option>
-                                                    <option value="intermediate">中级</option>
-                                                    <option value="advanced">高级</option>
-                                                </select>
+                                                <div className="difficulty-pills">
+                                                    {(['basic', 'intermediate', 'advanced'] as const).map((d) => (
+                                                        <button
+                                                            key={d}
+                                                            type="button"
+                                                            className={`difficulty-pill${genDifficulty === d ? ' active' : ''}`}
+                                                            onClick={() => setGenDifficulty(d)}
+                                                        >
+                                                            {{ basic: '入门', intermediate: '中级', advanced: '高级' }[d]}
+                                                        </button>
+                                                    ))}
+                                                </div>
                                             </label>
-                                            <button className="primary-button" type="button" onClick={handleGenerateWords}>获取新单词</button>
+                                            <button className="primary-button" type="button" onClick={handleGenerateWords} disabled={genLoading}>
+                                                {genLoading ? '生成中…' : '获取新单词'}
+                                            </button>
                                         </div>
 
                                         {genResults.length > 0 && (
@@ -847,7 +1047,17 @@ function App() {
                                                 <strong>例句</strong>
                                                 <p>{selectedWord.example}</p>
                                             </div>
+
+                                            {wordImageUrl && (
+                                                <div className="detail-image">
+                                                    <img src={wordImageUrl} alt={selectedWord.term} className="word-image" />
+                                                </div>
+                                            )}
+
                                             <div className="detail-actions">
+                                                <button className="ghost-button" type="button" onClick={() => handleGenerateImage(selectedWord.term, activeList?.context || '')} disabled={wordImageLoading}>
+                                                    {wordImageLoading ? '搜索图片…' : wordImageUrl ? '换一张' : '生成图片'}
+                                                </button>
                                                 <button className="ghost-button" type="button" onClick={() => setSelectedWordId(activeList.words[0]?.id ?? '')}>切换到第一个词</button>
                                                 <button className="ghost-button danger" type="button" onClick={() => handleDeleteWord(selectedWord.id)}>删除这个词</button>
                                             </div>
@@ -863,23 +1073,81 @@ function App() {
 
                 {activeTab === 'learn' && (
                     <section className="practice-layout">
-                            {renderPracticePanel('学习模式', learnSession, handleLearnAnswer, handleLearnNext, resetLearnSession, true, true, () => setLearnShowExplanationIndex(learnSession.currentIndex))}
+                        <section className="panel practice-panel">
+                            <div className="panel-head">
+                                <div>
+                                    <p className="eyebrow">学习模式</p>
+                                    <h2>{learnSubTab === 'practice' ? '题目练习' : '短文阅读'}</h2>
+                                </div>
+                                <div className="difficulty-pills" style={{ display: 'inline-flex', gap: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 4 }}>
+                                    <button type="button" className={`difficulty-pill ${learnSubTab === 'practice' ? 'active' : ''}`} onClick={() => setLearnSubTab('practice')}>题目</button>
+                                    <button type="button" className={`difficulty-pill ${learnSubTab === 'reading' ? 'active' : ''}`} onClick={() => setLearnSubTab('reading')}>阅读</button>
+                                </div>
+                            </div>
+
+                            {learnSubTab === 'practice' ? (
+                                renderPracticePanel('题目练习', learnSession, handleLearnAnswer, handleLearnNext, resetLearnSession, true, true, () => setLearnShowExplanationIndex(learnSession.currentIndex))
+                            ) : (
+                                <div className="reading-section">
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
+                                        <label className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.9rem' }}>
+                                            <input type="checkbox" checked={showTranslation} onChange={(e) => setShowTranslation(e.target.checked)} />
+                                            显示翻译
+                                        </label>
+                                        <button className="primary-button" type="button" onClick={handleGenerateReading} disabled={readingLoading}>
+                                            {readingLoading ? '生成中…' : '生成短文'}
+                                        </button>
+                                    </div>
+
+                                    {!activeList || !activeList.words.length ? (
+                                        <div className="empty-state">当前词表还没有单词，先添加几个词再生成阅读短文。</div>
+                                    ) : readingPassage ? (
+                                        <div className="reading-passage">
+                                            {renderHighlightedPassage(readingPassage, activeList?.words ?? [], showTranslation)}
+                                        </div>
+                                    ) : (
+                                        <div className="empty-state">点击「生成短文」，AI 会根据当前词表中的单词创作一段短文。</div>
+                                    )}
+                                </div>
+                            )}
+                        </section>
                         <aside className="panel practice-summary">
-                            <p className="eyebrow">学习进度</p>
-                            <h2>{learnScore}%</h2>
-                            <div className="summary-card wide">
-                                <span>正确数</span>
-                                <strong>{learnSession.correctCount}</strong>
-                            </div>
-                            <div className="summary-card wide">
-                                <span>题目数</span>
-                                <strong>{learnSession.questions.length}</strong>
-                            </div>
-                            <div className="summary-card wide">
-                                <span>当前词表</span>
-                                <strong>{activeList?.name ?? '无'}</strong>
-                            </div>
-                            <button className="primary-button" type="button" onClick={resetLearnSession}>重新生成学习题</button>
+                            {learnSubTab === 'practice' ? (
+                                <>
+                                    <p className="eyebrow">学习进度</p>
+                                    <h2>{learnScore}%</h2>
+                                    <div className="summary-card wide">
+                                        <span>正确数</span>
+                                        <strong>{learnSession.correctCount}</strong>
+                                    </div>
+                                    <div className="summary-card wide">
+                                        <span>题目数</span>
+                                        <strong>{learnSession.questions.length}</strong>
+                                    </div>
+                                    <div className="summary-card wide">
+                                        <span>当前词表</span>
+                                        <strong>{activeList?.name ?? '无'}</strong>
+                                    </div>
+                                    <button className="primary-button" type="button" onClick={resetLearnSession}>重新生成学习题</button>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="eyebrow">词表单词</p>
+                                    <h2>{activeList?.words.length ?? 0} 个词</h2>
+                                    <div className="mini-progress-list">
+                                        {activeList?.words.slice(0, 12).map((w) => (
+                                            <div key={w.id} className="mini-progress-item">
+                                                <div>
+                                                    <strong>{w.term}</strong>
+                                                    {showTranslation && <p style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{w.meaning}</p>}
+                                                </div>
+                                                <span>{w.score}%</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button className="primary-button" type="button" onClick={handleGenerateReading} disabled={readingLoading}>重新生成</button>
+                                </>
+                            )}
                         </aside>
                     </section>
                 )}
@@ -902,7 +1170,9 @@ function App() {
                                 <span>建议</span>
                                 <strong>优先复习低分词</strong>
                             </div>
-                            <button className="primary-button" type="button" onClick={resetQuizSession}>重新开始测验</button>
+                            <button className="primary-button" type="button" onClick={handleGenerateQuiz} disabled={quizGenerating}>
+                                {quizGenerating ? '生成中…' : '生成测验题'}
+                            </button>
                         </aside>
                     </section>
                 )}

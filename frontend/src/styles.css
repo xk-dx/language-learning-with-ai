@@ -318,6 +318,7 @@ button {
 .overview-word-card {
     padding: 18px;
     min-height: 160px;
+    text-align: left;
 }
 
 .word-tag {
@@ -454,6 +455,12 @@ button {
 
 .primary-button:hover {
     transform: translateY(-1px);
+}
+
+.primary-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
 }
 
 .ghost-button {
@@ -792,4 +799,156 @@ button {
     background: rgba(7,18,36,0.02);
     border-color: rgba(7,18,36,0.04);
     color: var(--text);
+}
+
+.light-mode .option-card.selected {
+    border-color: rgba(14, 165, 255, 0.5);
+    background: rgba(14, 165, 255, 0.08);
+}
+
+.light-mode .option-card.correct {
+    border-color: var(--accent-strong);
+    background: rgba(14, 179, 123, 0.1);
+}
+
+.light-mode .option-card.wrong {
+    border-color: var(--danger);
+    background: rgba(224, 36, 61, 0.08);
+}
+
+/* ── Difficulty pill selector ── */
+.difficulty-pills {
+    display: inline-flex;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 14px;
+    padding: 4px;
+}
+
+.difficulty-pill {
+    padding: 6px 16px;
+    border-radius: 11px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.difficulty-pill:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.difficulty-pill.active {
+    background: var(--accent);
+    color: #071427;
+    font-weight: 600;
+    box-shadow: 0 2px 12px rgba(91, 228, 155, 0.28);
+}
+
+.light-mode .difficulty-pills {
+    background: rgba(7, 18, 36, 0.04);
+}
+
+.light-mode .difficulty-pill {
+    color: var(--muted);
+}
+
+.light-mode .difficulty-pill:hover {
+    color: var(--text);
+    background: rgba(7, 18, 36, 0.05);
+}
+
+.light-mode .difficulty-pill.active {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* Reading mode */
+.reading-section {
+    display: grid;
+    gap: 12px;
+}
+
+.reading-passage {
+    padding: 20px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--line);
+    line-height: 1.8;
+    font-size: 1.05rem;
+}
+
+.reading-text {
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.reading-highlight {
+    color: var(--accent-alt);
+    font-weight: 600;
+    border-bottom: 2px solid var(--accent-alt);
+    cursor: help;
+    transition: 0.15s;
+}
+
+.reading-highlight:hover {
+    background: rgba(110, 224, 255, 0.1);
+    border-radius: 4px;
+}
+
+.reading-trans {
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 0.9rem;
+}
+
+.light-mode .reading-passage {
+    background: rgba(7, 18, 36, 0.01);
+}
+
+/* Word image card */
+.detail-image {
+    margin-top: 14px;
+    border-radius: 18px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    max-width: 400px;
+}
+
+.word-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 18px;
+}
+
+.toggle-label {
+    user-select: none;
+}
+
+.toggle-label input[type="checkbox"] {
+    accent-color: var(--accent-strong);
+    width: 16px;
+    height: 16px;
+}
+
+/* Cloze question */
+.cloze-sentence {
+    padding: 16px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--line);
+    line-height: 1.8;
+    font-size: 1.08rem;
+}
+
+.cloze-blank {
+    color: var(--accent-alt);
+    font-weight: 700;
+    letter-spacing: 0.1em;
 }

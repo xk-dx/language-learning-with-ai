@@ -33,7 +33,7 @@ export function buildAutoContent(term: string, context: string): Pick<WordItem, 
     return {
         meaning: `在「${context}」语境下，${term} 的常用含义`,
         example: `在 ${context} 场景里，人们会更自然地使用 ${term} 这个词。`,
-        note: '当前版本使用本地规则生成，后续可切换为后端 AI 释义。'
+        note: '在场景语境中使用含义明确。'
     };
 }
 
@@ -164,4 +164,19 @@ export function generateSmartWords(context: string, count: number, difficulty: '
     }
 
     return results;
+}
+
+export function buildLocalReading(words: Pick<WordItem, 'term' | 'meaning'>[], context: string): string {
+    const terms = words.slice(0, 10);
+    const sentences = terms.map((w, i) => {
+        const phrases = [
+            `In the context of "${context}", we often use the word "${w.term}" which means "${w.meaning}".`,
+            `One important term here is "${w.term}" — it refers to ${w.meaning}.`,
+            `You should remember "${w.term}" when talking about ${context}.`,
+            `The word "${w.term}" appears frequently in ${context} scenarios, meaning "${w.meaning}".`,
+            `When discussing ${context}, "${w.term}" is a key vocabulary word — ${w.meaning}.`
+        ];
+        return phrases[i % phrases.length];
+    });
+    return `${sentences.join(' ')}\n\nThese are the basic vocabulary words related to "${context}". Try to use them in your own sentences!`;
 }
