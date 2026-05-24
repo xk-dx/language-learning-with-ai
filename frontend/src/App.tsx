@@ -21,6 +21,7 @@ const TABS: Array<{ id: TabId; label: string; hint: string }> = [
     { id: 'lists', label: '词表', hint: '管理词汇' },
     { id: 'learn', label: '学习', hint: '单词学习' },
     { id: 'quiz', label: '测验', hint: '快速检验' },
+    { id: 'voice', label: '语音', hint: '对话练习' },
     { id: 'progress', label: '进度', hint: '查看掌握度' }
 ];
 
@@ -395,6 +396,95 @@ function App() {
     };
 
     const [quizGenerating, setQuizGenerating] = useState(false);
+
+    // Voice chat state
+    const [voiceMessages, setVoiceMessages] = useState<Array<{role: 'user'|'ai'; text: string}>>([]);
+    const [voiceStatus, setVoiceStatus] = useState<'idle'|'listening'|'processing'|'speaking'>('idle');
+    const [voiceListening, setVoiceListening] = useState(false);
+    const recognitionRef = useRef<any>(null);
+    const synthRef = useRef(window.speechSynthesis);
+
+    const startVoiceChat = () => {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            notify('浏览器不支持语音识别，请使用 Chrome。');
+            return;
+        }
+
+        setVoiceListening(true);
+        setVoiceStatus('listening');
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'zh-CN';
+        recognition.interimResults = false;
+        recognition.continuous = false;
+
+        recognition.onresult = async (event: any) => {
+            const transcript = event.results[0][0].transcript;
+            setVoiceMessages((prev) => [...prev, { role: 'user', text: transcript }]);
+            setVoiceStatus('processing');
+
+            try {
+                const resp = await fetch('http://localhost:5001/api/text-proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: `你是一个英语词汇学习助手。用户正在学习单词，用中文回答，帮助用户练习。用户说：${transcript}`,
+                        max_tokens: 200,
+                        temperature: 0.7
+                    }),
+                    signal: AbortSignal.timeout(10000)
+                });
+                const data = await resp.json();
+                const reply = data?.provider_response?.choices?.[0]?.message?.content || '抱歉，我没听清。';
+                setVoiceMessages((prev) => [...prev, { role: 'ai', text: reply }]);
+
+                setVoiceStatus('speaking');
+                const utterance = new SpeechSynthesisUtterance(reply);
+                utterance.lang = 'zh-CN';
+                utterance.onend = () => {
+                    setVoiceStatus('idle');
+                    setVoiceListening(false);
+                };
+                synthRef.current.speak(utterance);
+            } catch {
+                setVoiceMessages((prev) => [...prev, { role: 'ai', text: '网络连接失败，请检查后端是否运行。' }]);
+                setVoiceStatus('idle');
+                setVoiceListening(false);
+            }
+        };
+
+        recognition.onerror = () => {
+            setVoiceStatus('idle');
+            setVoiceListening(false);
+            notify('语音识别出错，请重试。');
+        };
+
+        recognition.onend = () => {
+            if (voiceStatus === 'listening') {
+                setVoiceStatus('idle');
+                setVoiceListening(false);
+            }
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+    };
+
+    const stopVoiceChat = () => {
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+        }
+        synthRef.current.cancel();
+        setVoiceListening(false);
+        setVoiceStatus('idle');
+    };
+
+    const clearVoiceChat = () => {
+        setVoiceMessages([]);
+        setVoiceStatus('idle');
+        setVoiceListening(false);
+    };
 
     const handleGenerateQuiz = async () => {
         if (!activeList || !activeList.words.length) return notify('当前词表还没有单词。');
@@ -1173,6 +1263,68 @@ function App() {
                             <button className="primary-button" type="button" onClick={handleGenerateQuiz} disabled={quizGenerating}>
                                 {quizGenerating ? '生成中…' : '生成测验题'}
                             </button>
+                        </aside>
+                    </section>
+                )}
+
+                {activeTab === 'voice' && (
+                    <section className="practice-layout">
+                        <section className="panel practice-panel">
+                            <div className="panel-head">
+                                <div>
+                                    <p className="eyebrow">语音对话</p>
+                                    <h2>和 AI 口语练习</h2>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                    <span className={`voice-status-dot ${voiceStatus}`} />
+                                    <span className="muted-text">
+                                        {voiceStatus === 'idle' && '待机'}
+                                        {voiceStatus === 'listening' && '聆听中…'}
+                                        {voiceStatus === 'processing' && '思考中…'}
+                                        {voiceStatus === 'speaking' && '播报中…'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="voice-messages">
+                                {voiceMessages.length === 0 && (
+                                    <div className="empty-state">点击「开始对话」用语音和 AI 练习词汇。支持中英文混合对话。</div>
+                                )}
+                                {voiceMessages.map((msg, i) => (
+                                    <div key={i} className={`voice-msg voice-msg-${msg.role}`}>
+                                        <strong>{msg.role === 'user' ? '你' : 'AI'}</strong>
+                                        <p>{msg.text}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="voice-controls">
+                                {!voiceListening ? (
+                                    <button className="primary-button" type="button" onClick={startVoiceChat} style={{ fontSize: '1.1rem', padding: '14px 24px' }}>
+                                        🎤 开始对话
+                                    </button>
+                                ) : (
+                                    <button className="ghost-button danger" type="button" onClick={stopVoiceChat} style={{ fontSize: '1.1rem', padding: '14px 24px' }}>
+                                        ⏹ 结束对话
+                                    </button>
+                                )}
+                                {voiceMessages.length > 0 && (
+                                    <button className="ghost-button" type="button" onClick={clearVoiceChat}>清空记录</button>
+                                )}
+                            </div>
+                        </section>
+                        <aside className="panel practice-summary">
+                            <p className="eyebrow">当前词表</p>
+                            <h2>{activeList?.name ?? '无'}</h2>
+                            <div className="summary-card wide">
+                                <span>单词数</span>
+                                <strong>{activeList?.words.length ?? 0}</strong>
+                            </div>
+                            <div className="summary-card wide">
+                                <span>场景</span>
+                                <strong>{activeList?.context ?? '-'}</strong>
+                            </div>
+                            <p className="muted-text" style={{ marginTop: 16 }}>AI 会基于当前词表与你进行口语对话练习，帮助巩固词汇。</p>
                         </aside>
                     </section>
                 )}

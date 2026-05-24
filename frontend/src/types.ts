@@ -1,4 +1,4 @@
-export type TabId = 'overview' | 'lists' | 'learn' | 'quiz' | 'progress';
+export type TabId = 'overview' | 'lists' | 'learn' | 'quiz' | 'progress' | 'voice';
 
 export interface WordItem {
     id: string;
