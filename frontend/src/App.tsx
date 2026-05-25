@@ -338,7 +338,20 @@ function App() {
 
     const handleAddGenerated = (word: any) => {
         if (!activeList) return;
-        setState((current) => addWordToList(current, activeList.id, word.term, word.meaning));
+        const newWord: WordItem = {
+            id: createId('word'),
+            term: word.term,
+            meaning: word.meaning || '',
+            example: word.example || '',
+            note: word.note || '',
+            score: 20,
+            mastered: false,
+            createdAt: new Date().toISOString()
+        };
+        setState((current) => updateList(current, activeList.id, (list) => ({
+            ...list,
+            words: [newWord, ...list.words]
+        })));
         notify('已加入词表');
         setGenResults((cur) => cur.filter((w) => w.id !== word.id));
     };
@@ -348,7 +361,20 @@ function App() {
         setState((current) => {
             let next = current;
             genResults.forEach((w) => {
-                next = addWordToList(next, activeList.id, w.term, w.meaning);
+                const newWord: WordItem = {
+                    id: createId('word'),
+                    term: w.term,
+                    meaning: w.meaning || '',
+                    example: w.example || '',
+                    note: w.note || '',
+                    score: 20,
+                    mastered: false,
+                    createdAt: new Date().toISOString()
+                };
+                next = updateList(next, activeList.id, (list) => ({
+                    ...list,
+                    words: [newWord, ...list.words]
+                }));
             });
             return next;
         });
