@@ -11,7 +11,10 @@ import {
     shuffle,
     updateWordProgress,
     generateSmartWords,
-    buildLocalReading
+    buildLocalReading,
+    buildLocalCloze,
+    logActivity,
+    getActivityStats
 } from './utils';
 import { fetchGeneratedWords, fetchWordCompletion, fetchReading, fetchImage, fetchQuizExtras } from './apiService';
 
@@ -440,25 +443,27 @@ function App() {
     const [quizSpellingInput, setQuizSpellingInput] = useState('');
     const [quizIncludeSpelling, setQuizIncludeSpelling] = useState(true);
     const [quizIncludeCloze, setQuizIncludeCloze] = useState(true);
+    const [quizIncludeMeaning, setQuizIncludeMeaning] = useState(true);
     const [quizShowExplanation, setQuizShowExplanation] = useState(false);
 
     const quizQScore = quizQuestions.length ? Math.round((quizQCorrectCount / quizQuestions.length) * 100) : 0;
 
-    const handleQuizStart = async () => {
+    const handleQuizStart = () => {
         if (!activeList || !activeList.words.length) return;
-        setQuizGenerating(true);
 
-        // Build local questions: meaning-match + spelling
+        // Build local questions: meaning-match + spelling + cloze
         const words = shuffle([...activeList.words]);
         const local: any[] = [];
         for (const w of words) {
             // Meaning match
-            const distractors = shuffle(words.filter((x) => x.id !== w.id)).slice(0, 3).map((x) => x.meaning);
-            while (distractors.length < 3) distractors.push('其他含义');
-            local.push({
-                type: 'meaning', wordId: w.id, term: w.term, correctMeaning: w.meaning,
-                options: shuffle([w.meaning, ...distractors]), note: w.note, example: w.example, contextNote: '选择正确的释义'
-            });
+            if (quizIncludeMeaning) {
+                const distractors = shuffle(words.filter((x) => x.id !== w.id)).slice(0, 3).map((x) => x.meaning);
+                while (distractors.length < 3) distractors.push('其他含义');
+                local.push({
+                    type: 'meaning', wordId: w.id, term: w.term, correctMeaning: w.meaning,
+                    options: shuffle([w.meaning, ...distractors]), note: w.note, example: w.example, contextNote: '选择正确的释义'
+                });
+            }
             // Spelling
             if (quizIncludeSpelling) {
                 local.push({
@@ -466,22 +471,11 @@ function App() {
                 });
             }
         }
-        // Cloze from AI
+        // Cloze — 本地挖空
         if (quizIncludeCloze) {
-            const extras = await fetchQuizExtras(
-                activeList.words.map((w) => ({ term: w.term, meaning: w.meaning })), activeList.context
-            );
-            const clozeQ = (extras || []).filter((x) => x.type === 'cloze');
-            if (clozeQ.length === 0) {
-                notify('完形填空生成失败（AI 返回空），仅使用本地题目。');
-            }
-            for (const q of clozeQ) {
-                local.push({
-                    type: 'cloze', wordId: `ai_${Date.now()}_${Math.random()}`, term: q.term,
-                    correctMeaning: q.term, options: q.options || [], note: q.note || '',
-                    example: q.example || '', questionText: q.questionText || '', contextNote: '选择适合空格的单词'
-                });
-            }
+            const clozeQ = buildLocalCloze(words, words.length);
+            local.push(...clozeQ);
+            if (clozeQ.length === 0) notify('部分单词缺少例句，完形填空题数可能较少。');
         }
         setQuizQuestions(shuffle(local));
         setQuizQIndex(0);
@@ -489,11 +483,11 @@ function App() {
         setQuizQSelected('');
         setQuizQCorrect(false);
         setQuizQCorrectCount(0);
-        setQuizGenerating(false);
         setQuizPhase('active');
     };
 
     const handleQuizChoice = (option: string) => {
+        logActivity();
         const q = quizQuestions[quizQIndex];
         const correct = option === q.correctMeaning;
         setQuizQSelected(option);
@@ -777,6 +771,7 @@ function App() {
     }, [state.activeListId]);
 
     const handleFlashcardResult = (known: boolean) => {
+        logActivity();
         if (known) {
             setFlashcardKnown((v) => v + 1);
             if (activeList) {
@@ -1034,6 +1029,7 @@ function App() {
     const quizScore = quizSession.questions.length ? Math.round((quizSession.correctCount / quizSession.questions.length) * 100) : 0;
     const learnScore = learnSession.questions.length ? Math.round((learnSession.correctCount / learnSession.questions.length) * 100) : 0;
     const overviewWords = shuffle(state.lists.flatMap((list) => list.words)).slice(0, 8);
+    const activityStats = useMemo(() => getActivityStats(), []);
 
     return (
         <div className="app-shell">
@@ -1436,43 +1432,39 @@ function App() {
                         <section className="panel practice-panel">
                             {quizPhase === 'setup' && (
                                 <div style={{ padding: '20px 0', display: 'grid', gap: 20 }}>
-                                    {quizGenerating ? (
-                                        <div style={{ textAlign: 'center', padding: '40px 0' }}>
-                                            <p className="muted-text" style={{ fontSize: '1.1rem' }}>正在生成题目…</p>
-                                            <div className="progress-track" style={{ marginTop: 16, height: 6 }}>
-                                                <div className="progress-fill" style={{ width: '60%', animation: 'pulse-dot 1.2s ease-in-out infinite' }} />
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <>
+                                    <div>
+                                        <p className="eyebrow">测验配置</p>
+                                        <h2 style={{ fontSize: '1.3rem', margin: '8px 0' }}>{activeList?.name ?? '请选择词表'}</h2>
+                                        <p className="muted-text">词表共 {activeList?.words.length ?? 0} 个单词</p>
+                                    </div>
+
+                                    <div className="form-card" style={{ background: 'transparent', border: 'none', padding: 0 }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                                            <input type="checkbox" checked={quizIncludeMeaning} onChange={(e) => setQuizIncludeMeaning(e.target.checked)} style={{ accentColor: 'var(--accent-strong)', width: 18, height: 18 }} />
                                             <div>
-                                                <p className="eyebrow">测验配置</p>
-                                                <h2 style={{ fontSize: '1.3rem', margin: '8px 0' }}>{activeList?.name ?? '请选择词表'}</h2>
-                                                <p className="muted-text">词表共 {activeList?.words.length ?? 0} 个单词</p>
+                                                <strong>词义匹配</strong>
+                                                <p className="muted-text" style={{ margin: '2px 0 0' }}>看英文单词，选择正确的中文释义</p>
                                             </div>
-
-                                            <div className="form-card" style={{ background: 'transparent', border: 'none', padding: 0 }}>
-                                                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                                                    <input type="checkbox" checked={quizIncludeSpelling} onChange={(e) => setQuizIncludeSpelling(e.target.checked)} style={{ accentColor: 'var(--accent-strong)', width: 18, height: 18 }} />
-                                                    <div>
-                                                        <strong>拼写题</strong>
-                                                        <p className="muted-text" style={{ margin: '2px 0 0' }}>看中文释义，输入对应的英文单词</p>
-                                                    </div>
-                                                </label>
-                                                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 12 }}>
-                                                    <input type="checkbox" checked={quizIncludeCloze} onChange={(e) => setQuizIncludeCloze(e.target.checked)} style={{ accentColor: 'var(--accent-strong)', width: 18, height: 18 }} />
-                                                    <div>
-                                                        <strong>完形填空</strong>
-                                                        <p className="muted-text" style={{ margin: '2px 0 0' }}>根据句子上下文选词填空（需后端 AI）</p>
-                                                    </div>
-                                                </label>
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 12 }}>
+                                            <input type="checkbox" checked={quizIncludeSpelling} onChange={(e) => setQuizIncludeSpelling(e.target.checked)} style={{ accentColor: 'var(--accent-strong)', width: 18, height: 18 }} />
+                                            <div>
+                                                <strong>拼写题</strong>
+                                                <p className="muted-text" style={{ margin: '2px 0 0' }}>看中文释义，输入对应的英文单词</p>
                                             </div>
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 12 }}>
+                                            <input type="checkbox" checked={quizIncludeCloze} onChange={(e) => setQuizIncludeCloze(e.target.checked)} style={{ accentColor: 'var(--accent-strong)', width: 18, height: 18 }} />
+                                            <div>
+                                                <strong>完形填空</strong>
+                                                <p className="muted-text" style={{ margin: '2px 0 0' }}>根据例句上下文选词填空</p>
+                                            </div>
+                                        </label>
+                                    </div>
 
-                                            <button className="primary-button" type="button" onClick={handleQuizStart} disabled={!activeList?.words.length} style={{ padding: '14px', fontSize: '1.1rem' }}>
-                                                {!activeList?.words.length ? '词表为空' : '开始测验'}
-                                            </button>
-                                        </>
-                                    )}
+                                    <button className="primary-button" type="button" onClick={handleQuizStart} disabled={!activeList?.words.length} style={{ padding: '14px', fontSize: '1.1rem' }}>
+                                        {!activeList?.words.length ? '词表为空' : '开始测验'}
+                                    </button>
                                 </div>
                             )}
 
@@ -1483,7 +1475,10 @@ function App() {
                                             <p className="eyebrow">测验中</p>
                                             <h2>{quizQuestions[quizQIndex]?.type === 'spelling' ? '拼写题' : quizQuestions[quizQIndex]?.type === 'cloze' ? '完形填空' : '词义匹配'}</h2>
                                         </div>
-                                        <span className="muted-pill">第 {quizQIndex + 1} 题 / {quizQuestions.length} 题</span>
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                            <span className="muted-pill">第 {quizQIndex + 1} 题 / {quizQuestions.length} 题</span>
+                                            <button className="ghost-button" type="button" onClick={handleQuizReset} style={{ padding: '4px 10px', fontSize: '0.85rem' }}>退出</button>
+                                        </div>
                                     </div>
 
                                     {quizQuestions[quizQIndex]?.type === 'spelling' ? (
@@ -1530,7 +1525,7 @@ function App() {
                                         </div>
                                     ) : (
                                         <>
-                                            <p className="question-text">{quizQuestions[quizQIndex]?.type === 'cloze' ? '选择适合填入空格的单词：' : (quizQuestions[quizQIndex]?.contextNote ?? '选择正确释义：')}</p>
+                                            <p className="question-text">{quizQuestions[quizQIndex]?.type === 'cloze' ? '选择适合填入空格的单词：' : `"${quizQuestions[quizQIndex]?.term}" 的意思是什么？`}</p>
                                             {quizQuestions[quizQIndex]?.type === 'cloze' && quizQuestions[quizQIndex]?.questionText && (
                                                 <div className="cloze-sentence">
                                                     {quizQuestions[quizQIndex].questionText.split('___').map((part: string, i: number, arr: string[]) => (
@@ -1780,33 +1775,23 @@ function App() {
                         </div>
 
                         <div className="panel progress-panel" style={{ gridColumn: '1 / -1' }}>
-                            <p className="eyebrow">当前词表明细</p>
-                            <h2>{activeList?.name ?? '无词表'}</h2>
-                            <div className="summary-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 12 }}>
-                                <div className="summary-card">
-                                    <span>单词数</span>
-                                    <strong>{activeWordCount}</strong>
-                                </div>
-                                <div className="summary-card">
-                                    <span>已掌握</span>
-                                    <strong>{activeList?.words.filter((word) => word.mastered).length ?? 0}</strong>
-                                </div>
-                                <div className="summary-card">
-                                    <span>平均分</span>
-                                    <strong>{activeList ? Math.round(activeList.words.reduce((sum, word) => sum + word.score, 0) / Math.max(1, activeList.words.length)) : 0}%</strong>
-                                </div>
+                            <p className="eyebrow">打卡日历</p>
+                            <h2>练习记录</h2>
+                            <div className="activity-header">
+                                <div className="activity-stat"><span>连续提交</span><strong>{activityStats.streak} 天</strong></div>
+                                <div className="activity-stat"><span>本月解决</span><strong>{activityStats.monthSolved} 题</strong></div>
+                                <div className="activity-stat"><span>今日</span><strong>{activityStats.todayCount} 次</strong></div>
                             </div>
-                            <div className="mini-progress-list">
-                                {activeList?.words.sort((a, b) => a.score - b.score).map((word) => (
-                                    <div key={word.id} className="mini-progress-item">
-                                        <div>
-                                            <strong>{word.term}</strong>
-                                            <p>{word.meaning}</p>
-                                        </div>
-                                        <span>{word.score}%</span>
-                                    </div>
+                            <div className="activity-grid">
+                                {activityStats.days.map((day) => (
+                                    <div
+                                        key={day.date}
+                                        className={`activity-cell${day.count > 0 ? ' active' : ''}${day.count >= 3 ? ' level2' : ''}${day.count >= 6 ? ' level3' : ''}${day.count >= 10 ? ' level4' : ''}`}
+                                        title={`${day.date}: ${day.count} 次练习`}
+                                    />
                                 ))}
                             </div>
+                            <p className="muted-text" style={{ fontSize: '0.8rem', marginTop: 8 }}>近一年练习热力图 — 颜色越深练习次数越多</p>
                         </div>
                     </section>
                 )}

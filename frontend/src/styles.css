@@ -1108,6 +1108,84 @@ button {
     }
 }
 
+/* Activity calendar */
+.activity-header {
+    display: flex;
+    gap: 16px;
+    margin: 10px 0 16px;
+}
+
+.activity-stat {
+    flex: 1;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    text-align: center;
+}
+
+.activity-stat span {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.activity-stat strong {
+    display: block;
+    margin-top: 4px;
+    font-size: 1.2rem;
+    color: var(--text);
+}
+
+.activity-grid {
+    display: grid;
+    grid-template-columns: repeat(53, 1fr);
+    gap: 2px;
+}
+
+.activity-cell {
+    aspect-ratio: 1;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.04);
+    min-width: 10px;
+}
+
+.activity-cell.active {
+    background: rgba(91, 228, 155, 0.25);
+}
+
+.activity-cell.level2 {
+    background: rgba(91, 228, 155, 0.45);
+}
+
+.activity-cell.level3 {
+    background: rgba(91, 228, 155, 0.65);
+}
+
+.activity-cell.level4 {
+    background: rgba(91, 228, 155, 0.85);
+}
+
+.light-mode .activity-cell {
+    background: rgba(7, 18, 36, 0.03);
+}
+
+.light-mode .activity-cell.active {
+    background: rgba(14, 179, 123, 0.15);
+}
+
+.light-mode .activity-cell.level2 {
+    background: rgba(14, 179, 123, 0.35);
+}
+
+.light-mode .activity-cell.level3 {
+    background: rgba(14, 179, 123, 0.55);
+}
+
+.light-mode .activity-cell.level4 {
+    background: rgba(14, 179, 123, 0.75);
+}
+
 /* Toast */
 .toast {
     position: fixed;

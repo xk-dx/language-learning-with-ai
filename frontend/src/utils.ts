@@ -166,6 +166,63 @@ export function generateSmartWords(context: string, count: number, difficulty: '
     return results;
 }
 
+const ACTIVITY_KEY = 'wordpecker-activity-v1';
+
+function loadActivity(): Record<string, number> {
+    try {
+        return JSON.parse(localStorage.getItem(ACTIVITY_KEY) || '{}');
+    } catch { return {}; }
+}
+
+function saveActivity(data: Record<string, number>) {
+    try { localStorage.setItem(ACTIVITY_KEY, JSON.stringify(data)); } catch { /* ignore */ }
+}
+
+/** 记录一次答题活动 */
+export function logActivity() {
+    const today = new Date().toISOString().slice(0, 10);
+    const data = loadActivity();
+    data[today] = (data[today] || 0) + 1;
+    saveActivity(data);
+}
+
+/** 获取活动统计数据 */
+export function getActivityStats() {
+    const data = loadActivity();
+    const today = new Date().toISOString().slice(0, 10);
+    const todayStr = today;
+
+    // 本月
+    const thisMonth = todayStr.slice(0, 7);
+    let monthSolved = 0;
+    for (const [date, count] of Object.entries(data)) {
+        if (date.startsWith(thisMonth)) monthSolved += count;
+    }
+
+    // 连续提交 streak
+    let streak = 0;
+    const d = new Date();
+    while (true) {
+        const key = d.toISOString().slice(0, 10);
+        if (data[key]) { streak++; d.setDate(d.getDate() - 1); }
+        else break;
+    }
+
+    // 今日
+    const todayCount = data[todayStr] || 0;
+
+    // 最近 365 天数据（用于渲染网格）
+    const days: Array<{ date: string; count: number }> = [];
+    for (let i = 364; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const key = d.toISOString().slice(0, 10);
+        days.push({ date: key, count: data[key] || 0 });
+    }
+
+    return { streak, monthSolved, todayCount, days };
+}
+
 export function buildLocalReading(words: Pick<WordItem, 'term' | 'meaning'>[], context: string): string {
     const terms = words.slice(0, 10);
     const sentences = terms.map((w, i) => {
@@ -179,4 +236,42 @@ export function buildLocalReading(words: Pick<WordItem, 'term' | 'meaning'>[], c
         return phrases[i % phrases.length];
     });
     return `${sentences.join(' ')}\n\nThese are the basic vocabulary words related to "${context}". Try to use them in your own sentences!`;
+}
+
+/** 本地挖空生成完形填空题 */
+export function buildLocalCloze(
+    words: WordItem[],
+    count: number = 3
+): Array<{ type: 'cloze'; wordId: string; term: string; correctMeaning: string; options: string[]; note: string; example: string; questionText: string; contextNote: string }> {
+    const shuffled = shuffle(words).slice(0, count);
+    const results: any[] = [];
+
+    for (const word of shuffled) {
+        if (!word.example) continue;
+        // 从例句中找到目标词并替换为 ___
+        const regex = new RegExp(`\\b${word.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        if (!regex.test(word.example)) continue;
+
+        const questionText = word.example.replace(regex, '___');
+        // 干扰项：从其他词中随机取 3 个词
+        const distractors = shuffle(
+            words.filter((w) => w.id !== word.id).map((w) => w.term)
+        ).slice(0, 3);
+        // 补足到 3 个
+        while (distractors.length < 3) distractors.push(['it', 'this', 'that'][distractors.length]);
+
+        results.push({
+            type: 'cloze',
+            wordId: word.id,
+            term: word.term,
+            correctMeaning: word.term,
+            options: shuffle([word.term, ...distractors]),
+            note: word.note || '根据上下文选择正确单词',
+            example: word.example,
+            questionText,
+            contextNote: '选择适合空格的单词'
+        });
+    }
+
+    return results;
 }

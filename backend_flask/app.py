@@ -303,49 +303,50 @@ def generate_quiz_extra():
         else:
             term_list.append(str(w))
 
-    prompt = f"""Create 3 English cloze questions using these words: {', '.join(term_list)}
-
+    prompt = f"""Generate exactly 1 cloze question using these words: {', '.join(term_list)}
 Context: {context}
 
-Each question: write an English sentence with a blank ___, and list 4 word options (one correct answer, 3 distractors).
-
-Return JSON object with key "questions" containing the array:
-{{"questions": [{{"type": "cloze", "term": "correct word", "correctMeaning": "its meaning", "options": ["opt1","opt2","opt3","opt4"], "note": "explanation", "example": "full sentence with word", "questionText": "sentence with ___"}}]}}
+Respond with EXACTLY this format (no extra text):
+WORD: <correct word>
+SENTENCE: <English sentence with ___ for the blank>
+OPTIONS: <option1>|<option2>|<option3>|<option4>
+NOTE: <why this word fits>
 """
     try:
-        kwargs = dict(model=DEFAULT_MODEL, messages=[{'role': 'user', 'content': prompt}], max_tokens=1200, temperature=0.7)
-        try:
-            kwargs['response_format'] = {"type": "json_object"}
-            response = client.chat.completions.create(**kwargs)
-        except Exception:
-            kwargs.pop('response_format', None)
-            response = client.chat.completions.create(**kwargs)
-
-        raw = (response.choices[0].message.content or '').strip()
-        if not raw:
-            return jsonify({'questions': [], 'count': 0})
-
-        if raw.startswith('```'):
-            raw = raw.split('\n', 1)[-1]
-            raw = raw.rsplit('```', 1)[0].strip()
-
-        data = json.loads(raw)
-        # Accept either direct array or {"questions": [...]} wrapper
-        if isinstance(data, dict):
-            questions = data.get('questions', [])
-        elif isinstance(data, list):
-            questions = data
-        else:
-            questions = []
-        if not isinstance(questions, list):
-            questions = [questions]
+        questions = []
+        for i in range(3):
+            try:
+                response = client.chat.completions.create(
+                    model=DEFAULT_MODEL,
+                    messages=[{'role': 'user', 'content': prompt}],
+                    max_tokens=300,
+                    temperature=0.7
+                )
+                raw = (response.choices[0].message.content or '').strip()
+                lines = raw.split('\n')
+                q = {}
+                for line in lines:
+                    if line.startswith('WORD:'):
+                        q['term'] = line[5:].strip()
+                    elif line.startswith('SENTENCE:'):
+                        q['questionText'] = line[9:].strip()
+                    elif line.startswith('OPTIONS:'):
+                        parts = line[8:].strip().split('|')
+                        q['options'] = [p.strip() for p in parts if p.strip()]
+                    elif line.startswith('NOTE:'):
+                        q['note'] = line[5:].strip()
+                if q.get('term') and q.get('questionText') and len(q.get('options', [])) == 4:
+                    q['type'] = 'cloze'
+                    q['correctMeaning'] = q['term']
+                    q['example'] = q['questionText'].replace('___', q['term'])
+                    q['contextNote'] = '选择适合空格的单词'
+                    questions.append(q)
+            except Exception:
+                continue
 
         return jsonify({'questions': questions, 'count': len(questions)})
-    except json.JSONDecodeError as e:
-        app.logger.exception(f'quiz-extra parse failed, raw: {raw[:300]}')
-        return jsonify({'questions': [], 'count': 0}), 200
     except Exception as e:
-        app.logger.exception('quiz-extra failed')
+        app.logger.exception('generate-quiz-extra failed')
         return jsonify({'questions': [], 'count': 0}), 200
 
 
