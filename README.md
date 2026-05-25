@@ -1,20 +1,20 @@
 # ai智能英语学习平台
 
-基于原 [wordpecker-app](https://github.com/your-org/wordpecker-app) 概念简化复刻，前端 React + 后端 Flask，专注词汇学习的核心闭环。
+基于原 wordpecker-app 概念简化复刻，前端 React + 后端 Flask，专注词汇学习的核心闭环。
 
 ## 功能
 
-| 模块           | 说明                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------ |
-| 📋 词表管理     | 创建/删除词表，设置场景说明                                                                |
-| 📝 单词管理     | 添加/删除单词，AI 自动补全释义与例句                                                       |
-| 🧠 学习（题目） | 选择题练习，答完显示解析与例句                                                             |
-| 📖 学习（阅读） | AI 根据词表单词生成短文，高亮词表单词，可切换显示翻译                                      |
-| 🎯 测验         | 点击「生成测验题」一键生成全部题目（本地词义匹配 + AI 完形填空），答题后需主动点击显示解析 |
-| 📊 进度         | 整体与逐词掌握度追踪（答对 +28，答错 +6，≥60 标记已掌握）                                  |
-| 🤖 智能发现     | AI 根据场景生成真实英语词汇候选，可逐个或批量加入词表                                      |
-| 🖼️ 单词配图     | 在单词详情页搜索 Pexels 免费图库配图（需配置 API Key）                                     |
-| 🎤 语音对话     | 浏览器原生语音识别 → DeepSeek AI → 语音合成，零额外依赖，免费使用                          |
+| 模块           | 说明                                                                                     |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| 📋 词表管理     | 创建/删除词表，设置场景说明，渐进式披露（卡片网格 → 点击进入详情）                       |
+| 📝 单词管理     | 添加/删除单词，AI 自动补全释义与例句                                                     |
+| 🃏 学习（卡片） | 刷卡片 Flashcard 模式：看英文想中文 → 翻转看答案 → ✅认识(+28分) / ❌不认识(-15分)         |
+| 📖 学习（阅读） | AI 根据词表单词生成短文，高亮词表单词，可切换显示翻译                                    |
+| 🎯 测验         | 渐进式披露（配置页 → 答题 → 结果），三种题型混合：词义匹配 + 拼写题 + AI 完形填空        |
+| 📊 进度         | 整体进度条、最薄弱单词排行、已掌握单词排行、按分数排序的词表明细                         |
+| 🤖 智能发现     | AI 根据场景生成真实英语词汇候选，可逐个或批量加入词表                                    |
+| 🖼️ 单词配图     | 在单词详情页搜索 Pexels 免费图库配图（需配置 API Key）                                   |
+| 🎤 语音对话     | 多轮角色扮演：AI 根据词表场景扮演角色（店员/导游等），全英文语音对话，自动记忆对话上下文 |
 
 ## 项目结构
 
@@ -27,15 +27,19 @@ my_wordpecker/
 │   │   ├── utils.ts        # 工具函数、本地生成器
 │   │   ├── types.ts        # TypeScript 类型定义
 │   │   ├── data.ts         # 示例数据
-│   │   └── styles.css      # 全局样式（支持暗色/亮色主题）
+│   │   └── styles.css      # 全局样式（紧凑布局、暗色/亮色主题）
 │   └── index.html
 │
 ├── backend_flask/      # Flask AI 代理服务
-│   ├── app.py              # 端点：config / text-proxy / generate-words /
-│   │                       #  complete-word / generate-reading / find-image
+│   ├── app.py              # 端点：config, text-proxy, chat, generate-words,
+│   │                       #  complete-word, generate-reading, find-image,
+│   │                       #  generate-quiz-extra
 │   ├── requirements.txt
 │   ├── .env.example
 │   └── README.md
+│
+├── docs/
+│   └── voice-chat.md    # 语音对话功能详细说明
 │
 └── README.md           # 本文件
 ```
@@ -55,7 +59,6 @@ npm run dev
 ```bash
 cd my_wordpecker/backend_flask
 
-# 首次
 python -m venv venv
 # Windows
 venv\Scripts\activate
@@ -63,15 +66,13 @@ venv\Scripts\activate
 source venv/bin/activate
 pip install -r requirements.txt
 
-# 配置环境变量
 cp .env.example .env
 # 编辑 .env，填入 API Key
 
-# 启动
 python app.py
 ```
 
-后端默认运行在 `http://localhost:5001`，前端会自动检测并优先调用；若后端不可用，自动降级为本地生成器。
+后端默认运行在 `http://localhost:5001`，前端自动检测并优先调用后端；若后端不可用，自动降级为本地生成器。
 
 ## 环境变量
 
@@ -83,9 +84,13 @@ python app.py
 | `PEXELS_API_KEY`                       | 否   | —                          | Pexels 免费图库 Key（用于单词配图） |
 | `PORT`                                 | 否   | `5001`                     | Flask 服务端口                      |
 
-## 主题切换
+## 特色
 
-点击顶部导航栏的「☀️ 亮色」/「🌙 暗色」按钮切换主题，选择会持久化到 localStorage。
+- **紧凑布局**：顶栏 + 标签导航 + 浮动 Toast 通知，最大化内容展示空间
+- **渐进式披露**：词表页（网格 → 详情）、测验页（配置 → 答题 → 结果），信息逐步展开
+- **主题切换**：顶部一键切换暗色/亮色，持久化到 localStorage
+- **多题型测验**：词义匹配（本地）+ 拼写题（本地）+ 完形填空（AI），每题先给反馈再选择是否查看解析
+- **语音角色扮演**：根据词表场景自动生成 AI 角色提示词，多轮英语对话，自动记忆上下文
 
 ## 技术栈
 
@@ -93,6 +98,8 @@ python app.py
 - **后端**: Flask + OpenAI SDK + Pexels API
 - **数据**: 前端 localStorage（无后端依赖）
 - **AI 提供商**: 兼容 OpenAI / DeepSeek 等任何 OpenAI 兼容接口
+- **语音**: 浏览器 Web Speech API — `SpeechRecognition`（语音识别 STT）+ `speechSynthesis`（语音合成 TTS），纯浏览器端，零额外依赖，无需 API Key
+- **语音对话 Agent**: 多轮记忆（最近 20 轮）+ 动态角色提示词（根据词表场景自动生成）+ 全英文角色扮演
 
 ## License
 

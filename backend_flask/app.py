@@ -307,35 +307,43 @@ def generate_quiz_extra():
 
 Context: {context}
 
-Each question: write an English sentence with a blank ___, and list 4 word options (one correct answer from the list, 3 distractors from the list).
+Each question: write an English sentence with a blank ___, and list 4 word options (one correct answer, 3 distractors).
 
-Return ONLY this JSON format (no markdown, no extra text):
-[{{"type": "cloze", "term": "correct word", "correctMeaning": "its meaning", "options": ["opt1","opt2","opt3","opt4"], "note": "explanation", "example": "the full sentence", "questionText": "sentence with ___"}}]
+Return JSON object with key "questions" containing the array:
+{{"questions": [{{"type": "cloze", "term": "correct word", "correctMeaning": "its meaning", "options": ["opt1","opt2","opt3","opt4"], "note": "explanation", "example": "full sentence with word", "questionText": "sentence with ___"}}]}}
 """
     try:
-        response = client.chat.completions.create(
-            model=DEFAULT_MODEL,
-            messages=[{'role': 'user', 'content': prompt}],
-            max_tokens=1200,
-            temperature=0.7
-        )
+        kwargs = dict(model=DEFAULT_MODEL, messages=[{'role': 'user', 'content': prompt}], max_tokens=1200, temperature=0.7)
+        try:
+            kwargs['response_format'] = {"type": "json_object"}
+            response = client.chat.completions.create(**kwargs)
+        except Exception:
+            kwargs.pop('response_format', None)
+            response = client.chat.completions.create(**kwargs)
 
         raw = (response.choices[0].message.content or '').strip()
-        app.logger.info(f'quiz-extra raw: "{raw[:200]}"')
         if not raw:
             return jsonify({'questions': [], 'count': 0})
 
-        # Remove markdown code fences if present
         if raw.startswith('```'):
             raw = raw.split('\n', 1)[-1]
             raw = raw.rsplit('```', 1)[0].strip()
-        extra = json.loads(raw)
-        if not isinstance(extra, list):
-            extra = [extra]
-        return jsonify({'questions': extra, 'count': len(extra)})
+
+        data = json.loads(raw)
+        # Accept either direct array or {"questions": [...]} wrapper
+        if isinstance(data, dict):
+            questions = data.get('questions', [])
+        elif isinstance(data, list):
+            questions = data
+        else:
+            questions = []
+        if not isinstance(questions, list):
+            questions = [questions]
+
+        return jsonify({'questions': questions, 'count': len(questions)})
     except json.JSONDecodeError as e:
-        app.logger.exception('quiz-extra JSON parse failed')
-        return jsonify({'questions': [], 'count': 0, 'raw': raw[:300]}), 200
+        app.logger.exception(f'quiz-extra parse failed, raw: {raw[:300]}')
+        return jsonify({'questions': [], 'count': 0}), 200
     except Exception as e:
         app.logger.exception('quiz-extra failed')
         return jsonify({'questions': [], 'count': 0}), 200

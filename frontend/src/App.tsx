@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { initialState } from './data';
 import { AppState, PracticeSession, TabId, WordItem, WordList } from './types';
 import {
     buildAutoContent,
     calculateStats,
+    clampScore,
     createId,
     createPracticeSession,
     getActiveList,
@@ -16,13 +17,13 @@ import { fetchGeneratedWords, fetchWordCompletion, fetchReading, fetchImage, fet
 
 const STORAGE_KEY = 'wordpecker-mini-state-v1';
 const THEME_KEY = 'wordpecker-theme-v1';
-const TABS: Array<{ id: TabId; label: string; hint: string }> = [
-    { id: 'overview', label: '总览', hint: '看整体状态' },
-    { id: 'lists', label: '词表', hint: '管理词汇' },
-    { id: 'learn', label: '学习', hint: '单词学习' },
-    { id: 'quiz', label: '测验', hint: '快速检验' },
-    { id: 'voice', label: '语音', hint: '对话练习' },
-    { id: 'progress', label: '进度', hint: '查看掌握度' }
+const TABS: Array<{ id: TabId; label: string }> = [
+    { id: 'overview', label: '总览' },
+    { id: 'lists', label: '词表' },
+    { id: 'learn', label: '学习' },
+    { id: 'quiz', label: '测验' },
+    { id: 'voice', label: '语音' },
+    { id: 'progress', label: '进度' }
 ];
 
 const difficultyPills = ['入门', '日常', '进阶'];
@@ -154,7 +155,11 @@ function App() {
     const [quizSession, setQuizSession] = useState<PracticeSession>(() => buildSession(initialState.lists[0].words, 5));
     const [learnShowExplanationIndex, setLearnShowExplanationIndex] = useState<number | null>(null);
     const [quizShowExplanationIndex, setQuizShowExplanationIndex] = useState<number | null>(null);
-    const [learnSubTab, setLearnSubTab] = useState<'practice' | 'reading'>('practice');
+    const [learnSubTab, setLearnSubTab] = useState<'flashcard' | 'reading'>('flashcard');
+    const [flashcardWords, setFlashcardWords] = useState<WordItem[]>([]);
+    const [flashcardIndex, setFlashcardIndex] = useState(0);
+    const [flashcardFlipped, setFlashcardFlipped] = useState(false);
+    const [flashcardKnown, setFlashcardKnown] = useState(0);
     const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'));
     const messageTimer = useRef<number | null>(null);
 
@@ -381,6 +386,7 @@ function App() {
     // Word image state
     const [wordImageUrl, setWordImageUrl] = useState('');
     const [wordImageLoading, setWordImageLoading] = useState(false);
+    const [listView, setListView] = useState<'grid' | 'detail'>('grid');
 
     const handleGenerateImage = async (term: string, context: string) => {
         setWordImageUrl('');
@@ -396,6 +402,112 @@ function App() {
     };
 
     const [quizGenerating, setQuizGenerating] = useState(false);
+
+    // New quiz state
+    const [quizPhase, setQuizPhase] = useState<'setup' | 'active' | 'done'>('setup');
+    const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+    const [quizQIndex, setQuizQIndex] = useState(0);
+    const [quizQAnswered, setQuizQAnswered] = useState(false);
+    const [quizQSelected, setQuizQSelected] = useState('');
+    const [quizQCorrect, setQuizQCorrect] = useState(false);
+    const [quizQCorrectCount, setQuizQCorrectCount] = useState(0);
+    const [quizSpellingInput, setQuizSpellingInput] = useState('');
+    const [quizIncludeSpelling, setQuizIncludeSpelling] = useState(true);
+    const [quizIncludeCloze, setQuizIncludeCloze] = useState(true);
+    const [quizShowExplanation, setQuizShowExplanation] = useState(false);
+
+    const quizQScore = quizQuestions.length ? Math.round((quizQCorrectCount / quizQuestions.length) * 100) : 0;
+
+    const handleQuizStart = async () => {
+        if (!activeList || !activeList.words.length) return;
+        setQuizGenerating(true);
+
+        // Build local questions: meaning-match + spelling
+        const words = shuffle([...activeList.words]);
+        const local: any[] = [];
+        for (const w of words) {
+            // Meaning match
+            const distractors = shuffle(words.filter((x) => x.id !== w.id)).slice(0, 3).map((x) => x.meaning);
+            while (distractors.length < 3) distractors.push('其他含义');
+            local.push({
+                type: 'meaning', wordId: w.id, term: w.term, correctMeaning: w.meaning,
+                options: shuffle([w.meaning, ...distractors]), note: w.note, example: w.example, contextNote: '选择正确的释义'
+            });
+            // Spelling
+            if (quizIncludeSpelling) {
+                local.push({
+                    type: 'spelling', wordId: w.id, term: w.term, meaning: w.meaning, note: w.note, example: w.example
+                });
+            }
+        }
+        // Cloze from AI
+        if (quizIncludeCloze) {
+            const extras = await fetchQuizExtras(
+                activeList.words.map((w) => ({ term: w.term, meaning: w.meaning })), activeList.context
+            );
+            const clozeQ = (extras || []).filter((x) => x.type === 'cloze');
+            if (clozeQ.length === 0) {
+                notify('完形填空生成失败（AI 返回空），仅使用本地题目。');
+            }
+            for (const q of clozeQ) {
+                local.push({
+                    type: 'cloze', wordId: `ai_${Date.now()}_${Math.random()}`, term: q.term,
+                    correctMeaning: q.term, options: q.options || [], note: q.note || '',
+                    example: q.example || '', questionText: q.questionText || '', contextNote: '选择适合空格的单词'
+                });
+            }
+        }
+        setQuizQuestions(shuffle(local));
+        setQuizQIndex(0);
+        setQuizQAnswered(false);
+        setQuizQSelected('');
+        setQuizQCorrect(false);
+        setQuizQCorrectCount(0);
+        setQuizGenerating(false);
+        setQuizPhase('active');
+    };
+
+    const handleQuizChoice = (option: string) => {
+        const q = quizQuestions[quizQIndex];
+        const correct = option === q.correctMeaning;
+        setQuizQSelected(option);
+        setQuizQAnswered(true);
+        setQuizQCorrect(correct);
+        if (correct) setQuizQCorrectCount((v) => v + 1);
+        if (activeList) setState((current) => scoreWord(current, activeList.id, q.wordId, correct));
+    };
+
+    const handleQuizSpellingSubmit = () => {
+        const q = quizQuestions[quizQIndex];
+        const correct = quizSpellingInput.trim().toLowerCase() === q.term.toLowerCase();
+        setQuizQAnswered(true);
+        setQuizQCorrect(correct);
+        if (correct) setQuizQCorrectCount((v) => v + 1);
+        if (activeList) setState((current) => scoreWord(current, activeList.id, q.wordId, correct));
+    };
+
+    const handleQuizNext = () => {
+        setQuizQIndex((v) => v + 1);
+        setQuizQAnswered(false);
+        setQuizQSelected('');
+        setQuizQCorrect(false);
+        setQuizSpellingInput('');
+        setQuizShowExplanation(false);
+    };
+
+    const handleQuizFinish = () => {
+        setQuizPhase('done');
+        setQuizShowExplanation(false);
+    };
+
+    const handleQuizReset = () => {
+        setQuizPhase('setup');
+        setQuizQuestions([]);
+        setQuizQIndex(0);
+        setQuizQAnswered(false);
+        setQuizQCorrectCount(0);
+        setQuizGenerating(false);
+    };
 
     // Voice chat state — 多轮对话 agent
     const [voiceHistory, setVoiceHistory] = useState<Array<{ role: string; content: string }>>([]);
@@ -620,47 +732,46 @@ function App() {
         setLearnShowExplanationIndex(null);
     };
 
-    const handleQuizAnswer = (answer: string) => {
-        if (!activeList || quizSession.answered || quizSession.finished) {
-            return;
-        }
-
-        const currentQuestion = quizSession.questions[quizSession.currentIndex];
-        const isCorrect = answer === currentQuestion.correctMeaning;
-
-        setQuizSession((current) => ({
-            ...current,
-            answered: true,
-            selectedAnswer: answer,
-            correctCount: current.correctCount + (isCorrect ? 1 : 0)
-        }));
-        setState((current) => scoreWord(current, activeList.id, currentQuestion.wordId, isCorrect));
-        notify(isCorrect ? '答对了。' : '这题先记住正确含义。');
-    };
-
-    const handleQuizNext = () => {
-        setQuizSession((current) => {
-            const nextIndex = current.currentIndex + 1;
-            if (nextIndex >= current.questions.length) {
-                return {
-                    ...current,
-                    finished: true
-                };
-            }
-
-            return {
-                ...current,
-                currentIndex: nextIndex,
-                answered: false,
-                selectedAnswer: null
-            };
-        });
-        setQuizShowExplanationIndex(null);
-    };
-
     const resetLearnSession = () => {
         setLearnRound((value) => value + 1);
         notify('学习轮次已重置。');
+    };
+
+    // Flashcard logic
+    const resetFlashcard = () => {
+        if (!activeList) return;
+        setFlashcardWords(shuffle([...activeList.words]));
+        setFlashcardIndex(0);
+        setFlashcardFlipped(false);
+        setFlashcardKnown(0);
+    };
+
+    useEffect(() => {
+        resetFlashcard();
+    }, [state.activeListId]);
+
+    const handleFlashcardResult = (known: boolean) => {
+        if (known) {
+            setFlashcardKnown((v) => v + 1);
+            if (activeList) {
+                const word = flashcardWords[flashcardIndex];
+                setState((current) => scoreWord(current, activeList.id, word.id, true));
+            }
+        } else if (activeList) {
+            const word = flashcardWords[flashcardIndex];
+            // 不认识：扣 15 分，最低 0
+            setState((current) => updateList(current, activeList.id, (list) => ({
+                ...list,
+                words: list.words.map((w) =>
+                    w.id === word.id
+                        ? { ...w, score: clampScore(w.score - 15), mastered: w.score - 15 >= 60 }
+                        : w
+                )
+            })));
+        }
+        // Move to next card
+        setFlashcardFlipped(false);
+        setFlashcardIndex((v) => v + 1);
     };
 
     const resetQuizSession = () => {
@@ -690,7 +801,10 @@ function App() {
                 key={word.id}
                 type="button"
                 className={`word-card ${isSelected ? 'word-card-selected' : ''}`}
-                onClick={() => setSelectedWordId(word.id)}
+                onClick={() => {
+                    setSelectedWordId(word.id);
+                    setListView('detail');
+                }}
             >
                 <div className="word-card-top">
                     <div>
@@ -893,7 +1007,7 @@ function App() {
     const activeWordCount = activeList?.words.length ?? 0;
     const quizScore = quizSession.questions.length ? Math.round((quizSession.correctCount / quizSession.questions.length) * 100) : 0;
     const learnScore = learnSession.questions.length ? Math.round((learnSession.correctCount / learnSession.questions.length) * 100) : 0;
-    const overviewWords = shuffle(state.lists.flatMap((list) => list.words)).slice(0, 4);
+    const overviewWords = shuffle(state.lists.flatMap((list) => list.words)).slice(0, 8);
 
     return (
         <div className="app-shell">
@@ -901,46 +1015,17 @@ function App() {
             <div className="background-orb background-orb-right" />
 
             <main className="app-frame">
-                <section className="hero-panel panel">
-                    <div className="hero-topline">
+                <div className="panel top-bar">
+                    <div className="top-bar-left">
                         <span className="brand-mark">WordPecker</span>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <button
-                                className="ghost-button"
-                                type="button"
-                                onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
-                                aria-label="切换亮/暗模式"
-                            >
-                                {theme === 'light' ? '🌙 暗色' : '☀️ 亮色'}
-                            </button>
-                            <button className="ghost-button" type="button" onClick={handleSeedReset}>恢复示例数据</button>
-                        </div>
                     </div>
-                    <div className="hero-copy">
-                        <div>
-                            <p className="eyebrow">词汇学习工具</p>
-                            <h1>词表、学习和测验</h1>
-                            <p className="hero-text">
-                                创建词表、添加单词、AI 释义、练习与进度追踪。
-                            </p>
-                        </div>
-                        <div className="hero-stats">
-                            <div className="glass-stat">
-                                <span>词表</span>
-                                <strong>{stats.listCount}</strong>
-                            </div>
-                            <div className="glass-stat">
-                                <span>单词</span>
-                                <strong>{stats.wordCount}</strong>
-                            </div>
-                            <div className="glass-stat">
-                                <span>已掌握</span>
-                                <strong>{stats.masteredCount}</strong>
-                            </div>
-                        </div>
+                    <div className="top-bar-right">
+                        <button className="ghost-button" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))} style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
+                            {theme === 'light' ? '🌙 暗色' : '☀️ 亮色'}
+                        </button>
+                        <button className="ghost-button" type="button" onClick={handleSeedReset} style={{ padding: '6px 10px', fontSize: '0.85rem' }}>恢复</button>
                     </div>
-                    <div className="message-line">{message || '数据保存在本地浏览器中。'}</div>
-                </section>
+                </div>
 
                 <nav className="tab-nav panel">
                     {TABS.map((tab) => (
@@ -950,42 +1035,46 @@ function App() {
                             className={`tab-button ${activeTab === tab.id ? 'active' : ''}`}
                             onClick={() => setActiveTab(tab.id)}
                         >
-                            <span>{tab.label}</span>
-                            <small>{tab.hint}</small>
+                            {tab.label}
                         </button>
                     ))}
                 </nav>
+
+                {message && <div className="toast">{message}</div>}
 
                 {activeTab === 'overview' && (
                     <section className="dashboard-grid">
                         <div className="panel intro-panel">
                             <p className="eyebrow">快速上手</p>
-                            <h2>词表 → 加词 → 练习</h2>
+                            <h2 style={{ fontSize: '1.1rem', margin: '6px 0' }}>词表 → 加词 → 练习</h2>
                             <ol className="roadmap-list">
                                 <li>创建词表并选定场景</li>
                                 <li>手动或由 AI 生成新单词</li>
-                                <li>学习模式熟悉词义，测验模式检验掌握度</li>
-                                <li>进度页追踪每个词的掌握进度</li>
+                                <li>学习 + 测验 + 阅读 + 语音</li>
+                                <li>跟踪每词掌握进度</li>
                             </ol>
                         </div>
                         <div className="panel intro-panel">
                             <p className="eyebrow">当前词表</p>
-                            <h2>{activeList?.name ?? '暂无词表'}</h2>
-                            <p className="muted-text">{activeList?.context ?? '先创建一个词表，再开始录入单词。'}</p>
-                            <div className="compact-pills">
-                                {difficultyPills.map((pill) => (
-                                    <span key={pill} className="mini-pill">{pill}</span>
-                                ))}
+                            <h2 style={{ fontSize: '1.1rem', margin: '6px 0' }}>{activeList?.name ?? '暂无词表'}</h2>
+                            <p className="muted-text">{activeList?.context ?? '先创建一个词表。'}</p>
+                            <div className="glass-stat" style={{ marginTop: 12 }}>
+                                <span>单词</span>
+                                <strong>{activeWordCount}</strong>
                             </div>
                         </div>
-                        <div className="panel intro-panel wide-panel">
-                            <div className="panel-head">
-                                <div>
-                                    <p className="eyebrow">最近单词</p>
-                                    <h2>可以直接拿来练习</h2>
-                                </div>
+                        <div className="panel intro-panel">
+                            <p className="eyebrow">统计</p>
+                            <h2 style={{ fontSize: '1.1rem', margin: '6px 0' }}>{stats.averageScore}% 平均掌握度</h2>
+                            <div className="glass-stat" style={{ marginTop: 12 }}>
+                                <span>已掌握 / 总词</span>
+                                <strong>{stats.masteredCount} / {stats.wordCount}</strong>
                             </div>
-                            <div className="overview-word-grid">
+                        </div>
+                        <div className="panel intro-panel" style={{ gridColumn: '1 / -1' }}>
+                            <p className="eyebrow">最近单词</p>
+                            <h2 style={{ fontSize: '1.1rem', margin: '6px 0' }}>点击任意单词跳转详情</h2>
+                            <div className="overview-word-grid" style={{ marginTop: 8 }}>
                                 {overviewWords.map((word) => (
                                     <button key={word.id} type="button" className="overview-word-card" onClick={() => {
                                         const list = state.lists.find((l) => l.words.some((w) => w.id === word.id));
@@ -1024,6 +1113,7 @@ function App() {
                                         onClick={() => {
                                             setState((current) => ({ ...current, activeListId: list.id }));
                                             setSelectedWordId(list.words[0]?.id ?? '');
+                                            setListView('grid');
                                         }}
                                     >
                                         <span className={`list-color list-${list.color}`} />
@@ -1058,7 +1148,9 @@ function App() {
                         </aside>
 
                         <section className="panel main-panel">
-                            {activeList ? (
+                            {!activeList ? (
+                                <div className="empty-state">还没有词表，先从左边创建一个。</div>
+                            ) : listView === 'grid' ? (
                                 <>
                                     <div className="panel-head">
                                         <div>
@@ -1144,43 +1236,39 @@ function App() {
                                     <div className="word-grid">
                                         {activeList.words.map(renderWordCard)}
                                     </div>
-
-                                    {selectedWord && (
-                                        <article className="detail-card">
-                                            <div className="panel-head">
-                                                <div>
-                                                    <p className="eyebrow">单词详情</p>
-                                                    <h2>{selectedWord.term}</h2>
-                                                </div>
-                                                <span className={`mastery-badge ${selectedWord.mastered ? 'is-mastered' : ''}`}>
-                                                    {selectedWord.mastered ? '已掌握' : '学习中'}
-                                                </span>
-                                            </div>
-                                            <p className="detail-meaning">{selectedWord.meaning}</p>
-                                            <p className="muted-text">{selectedWord.note}</p>
-                                            <div className="detail-example">
-                                                <strong>例句</strong>
-                                                <p>{selectedWord.example}</p>
-                                            </div>
-
-                                            {wordImageUrl && (
-                                                <div className="detail-image">
-                                                    <img src={wordImageUrl} alt={selectedWord.term} className="word-image" />
-                                                </div>
-                                            )}
-
-                                            <div className="detail-actions">
-                                                <button className="ghost-button" type="button" onClick={() => handleGenerateImage(selectedWord.term, activeList?.context || '')} disabled={wordImageLoading}>
-                                                    {wordImageLoading ? '搜索图片…' : wordImageUrl ? '换一张' : '生成图片'}
-                                                </button>
-                                                <button className="ghost-button" type="button" onClick={() => setSelectedWordId(activeList.words[0]?.id ?? '')}>切换到第一个词</button>
-                                                <button className="ghost-button danger" type="button" onClick={() => handleDeleteWord(selectedWord.id)}>删除这个词</button>
-                                            </div>
-                                        </article>
-                                    )}
                                 </>
+                            ) : selectedWord ? (
+                                <article className="detail-card" style={{ border: 'none', background: 'transparent' }}>
+                                    <div className="panel-head" style={{ marginBottom: 8 }}>
+                                        <button className="ghost-button" type="button" onClick={() => setListView('grid')} style={{ padding: '6px 12px' }}>← 返回</button>
+                                        <span className={`mastery-badge ${selectedWord.mastered ? 'is-mastered' : ''}`}>
+                                            {selectedWord.mastered ? '已掌握' : '学习中'}
+                                        </span>
+                                    </div>
+                                    <h2 style={{ fontSize: '1.6rem', margin: '4px 0' }}>{selectedWord.term}</h2>
+                                    <p className="detail-meaning">{selectedWord.meaning}</p>
+                                    <p className="muted-text">{selectedWord.note}</p>
+
+                                    <div className="detail-example" style={{ marginTop: 14 }}>
+                                        <strong>例句</strong>
+                                        <p>{selectedWord.example}</p>
+                                    </div>
+
+                                    {wordImageUrl && (
+                                        <div className="detail-image" style={{ marginTop: 14 }}>
+                                            <img src={wordImageUrl} alt={selectedWord.term} className="word-image" />
+                                        </div>
+                                    )}
+
+                                    <div className="detail-actions" style={{ marginTop: 16 }}>
+                                        <button className="ghost-button" type="button" onClick={() => handleGenerateImage(selectedWord.term, activeList?.context || '')} disabled={wordImageLoading}>
+                                            {wordImageLoading ? '搜索图片…' : wordImageUrl ? '换一张' : '生成图片'}
+                                        </button>
+                                        <button className="ghost-button danger" type="button" onClick={() => handleDeleteWord(selectedWord.id)}>删除这个词</button>
+                                    </div>
+                                </article>
                             ) : (
-                                <div className="empty-state">还没有词表，先从左边创建一个。</div>
+                                <div className="empty-state">选择左侧词表中一个单词查看详情。</div>
                             )}
                         </section>
                     </section>
@@ -1192,16 +1280,66 @@ function App() {
                             <div className="panel-head">
                                 <div>
                                     <p className="eyebrow">学习模式</p>
-                                    <h2>{learnSubTab === 'practice' ? '题目练习' : '短文阅读'}</h2>
+                                    <h2>{learnSubTab === 'flashcard' ? '刷卡片' : '短文阅读'}</h2>
                                 </div>
                                 <div className="difficulty-pills" style={{ display: 'inline-flex', gap: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 4 }}>
-                                    <button type="button" className={`difficulty-pill ${learnSubTab === 'practice' ? 'active' : ''}`} onClick={() => setLearnSubTab('practice')}>题目</button>
+                                    <button type="button" className={`difficulty-pill ${learnSubTab === 'flashcard' ? 'active' : ''}`} onClick={() => setLearnSubTab('flashcard')}>卡片</button>
                                     <button type="button" className={`difficulty-pill ${learnSubTab === 'reading' ? 'active' : ''}`} onClick={() => setLearnSubTab('reading')}>阅读</button>
                                 </div>
                             </div>
 
-                            {learnSubTab === 'practice' ? (
-                                renderPracticePanel('题目练习', learnSession, handleLearnAnswer, handleLearnNext, resetLearnSession, true, true, () => setLearnShowExplanationIndex(learnSession.currentIndex))
+                            {learnSubTab === 'flashcard' ? (
+                                <div className="flashcard-section">
+                                    {!activeList || !activeList.words.length ? (
+                                        <div className="empty-state">当前词表还没有单词，先添加几个词再开始。</div>
+                                    ) : flashcardIndex >= flashcardWords.length ? (
+                                        <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                                            <h2 style={{ fontSize: '1.6rem', color: 'var(--accent)' }}>🎉 本轮完成！</h2>
+                                            <p className="muted-text" style={{ marginTop: 8 }}>复习了 {flashcardWords.length} 个单词，标记认识了 {flashcardKnown} 个</p>
+                                            <button className="primary-button" type="button" onClick={resetFlashcard} style={{ marginTop: 20 }}>再来一轮</button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="flashcard-progress">
+                                                <span className="muted-text">第 {flashcardIndex + 1} / {flashcardWords.length} 张</span>
+                                                <div className="progress-track" style={{ flex: 1, margin: '0 12px' }}>
+                                                    <div className="progress-fill" style={{ width: `${((flashcardIndex) / flashcardWords.length) * 100}%` }} />
+                                                </div>
+                                                <span className="muted-text">{flashcardKnown} 认识</span>
+                                            </div>
+
+                                            <div className={`flashcard ${flashcardFlipped ? 'flipped' : ''}`} onClick={() => !flashcardFlipped && setFlashcardFlipped(true)}>
+                                                <div className="flashcard-inner">
+                                                    <div className="flashcard-front">
+                                                        <p className="eyebrow">🧠 这是什么单词？</p>
+                                                        <h2 className="flashcard-word">{flashcardWords[flashcardIndex].term}</h2>
+                                                        <p className="muted-text" style={{ marginTop: 16 }}>点击翻转查看答案</p>
+                                                    </div>
+                                                    <div className="flashcard-back">
+                                                        <p className="eyebrow" style={{ marginBottom: 8 }}>释义</p>
+                                                        <h2 className="flashcard-word">{flashcardWords[flashcardIndex].meaning}</h2>
+                                                        <div className="detail-example" style={{ marginTop: 14, textAlign: 'left' }}>
+                                                            <strong>例句</strong>
+                                                            <p>{flashcardWords[flashcardIndex].example}</p>
+                                                        </div>
+                                                        <p className="muted-text" style={{ marginTop: 8 }}>{flashcardWords[flashcardIndex].note}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {flashcardFlipped && (
+                                                <div className="flashcard-actions">
+                                                    <button className="ghost-button" type="button" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', padding: '12px 24px', fontSize: '1rem' }} onClick={() => handleFlashcardResult(false)}>
+                                                        ❌ 不认识
+                                                    </button>
+                                                    <button className="primary-button" type="button" style={{ padding: '12px 24px', fontSize: '1rem' }} onClick={() => handleFlashcardResult(true)}>
+                                                        ✅ 认识
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
                             ) : (
                                 <div className="reading-section">
                                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
@@ -1227,23 +1365,23 @@ function App() {
                             )}
                         </section>
                         <aside className="panel practice-summary">
-                            {learnSubTab === 'practice' ? (
+                            {learnSubTab === 'flashcard' ? (
                                 <>
-                                    <p className="eyebrow">学习进度</p>
-                                    <h2>{learnScore}%</h2>
+                                    <p className="eyebrow">卡片进度</p>
+                                    <h2>{flashcardWords.length ? Math.round((flashcardKnown / flashcardWords.length) * 100) : 0}%</h2>
                                     <div className="summary-card wide">
-                                        <span>正确数</span>
-                                        <strong>{learnSession.correctCount}</strong>
+                                        <span>已认识</span>
+                                        <strong>{flashcardKnown}</strong>
                                     </div>
                                     <div className="summary-card wide">
-                                        <span>题目数</span>
-                                        <strong>{learnSession.questions.length}</strong>
+                                        <span>待复习</span>
+                                        <strong>{flashcardWords.length - flashcardIndex - (flashcardFlipped ? 1 : 0)}</strong>
                                     </div>
                                     <div className="summary-card wide">
                                         <span>当前词表</span>
                                         <strong>{activeList?.name ?? '无'}</strong>
                                     </div>
-                                    <button className="primary-button" type="button" onClick={resetLearnSession}>重新生成学习题</button>
+                                    <button className="primary-button" type="button" onClick={resetFlashcard}>重新打乱</button>
                                 </>
                             ) : (
                                 <>
@@ -1269,25 +1407,216 @@ function App() {
 
                 {activeTab === 'quiz' && (
                     <section className="practice-layout">
-                        {renderPracticePanel('测验模式', quizSession, handleQuizAnswer, handleQuizNext, resetQuizSession, false, quizShowExplanationIndex === quizSession.currentIndex, () => setQuizShowExplanationIndex(quizSession.currentIndex))}
+                        <section className="panel practice-panel">
+                            {quizPhase === 'setup' && (
+                                <div style={{ padding: '20px 0', display: 'grid', gap: 20 }}>
+                                    {quizGenerating ? (
+                                        <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                                            <p className="muted-text" style={{ fontSize: '1.1rem' }}>正在生成题目…</p>
+                                            <div className="progress-track" style={{ marginTop: 16, height: 6 }}>
+                                                <div className="progress-fill" style={{ width: '60%', animation: 'pulse-dot 1.2s ease-in-out infinite' }} />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div>
+                                                <p className="eyebrow">测验配置</p>
+                                                <h2 style={{ fontSize: '1.3rem', margin: '8px 0' }}>{activeList?.name ?? '请选择词表'}</h2>
+                                                <p className="muted-text">词表共 {activeList?.words.length ?? 0} 个单词</p>
+                                            </div>
+
+                                            <div className="form-card" style={{ background: 'transparent', border: 'none', padding: 0 }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                                                    <input type="checkbox" checked={quizIncludeSpelling} onChange={(e) => setQuizIncludeSpelling(e.target.checked)} style={{ accentColor: 'var(--accent-strong)', width: 18, height: 18 }} />
+                                                    <div>
+                                                        <strong>拼写题</strong>
+                                                        <p className="muted-text" style={{ margin: '2px 0 0' }}>看中文释义，输入对应的英文单词</p>
+                                                    </div>
+                                                </label>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 12 }}>
+                                                    <input type="checkbox" checked={quizIncludeCloze} onChange={(e) => setQuizIncludeCloze(e.target.checked)} style={{ accentColor: 'var(--accent-strong)', width: 18, height: 18 }} />
+                                                    <div>
+                                                        <strong>完形填空</strong>
+                                                        <p className="muted-text" style={{ margin: '2px 0 0' }}>根据句子上下文选词填空（需后端 AI）</p>
+                                                    </div>
+                                                </label>
+                                            </div>
+
+                                            <button className="primary-button" type="button" onClick={handleQuizStart} disabled={!activeList?.words.length} style={{ padding: '14px', fontSize: '1.1rem' }}>
+                                                {!activeList?.words.length ? '词表为空' : '开始测验'}
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {quizPhase === 'active' && (
+                                <>
+                                    <div className="panel-head">
+                                        <div>
+                                            <p className="eyebrow">测验中</p>
+                                            <h2>{quizQuestions[quizQIndex]?.type === 'spelling' ? '拼写题' : quizQuestions[quizQIndex]?.type === 'cloze' ? '完形填空' : '词义匹配'}</h2>
+                                        </div>
+                                        <span className="muted-pill">第 {quizQIndex + 1} 题 / {quizQuestions.length} 题</span>
+                                    </div>
+
+                                    {quizQuestions[quizQIndex]?.type === 'spelling' ? (
+                                        <div style={{ padding: '20px 0' }}>
+                                            <p className="question-text">请根据中文释义输入对应的英文单词：</p>
+                                            <div className="cloze-sentence" style={{ textAlign: 'center', fontSize: '1.3rem', marginTop: 12 }}>
+                                                {quizQuestions[quizQIndex].meaning}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                                                <input
+                                                    value={quizSpellingInput}
+                                                    onChange={(e) => setQuizSpellingInput(e.target.value)}
+                                                    onKeyDown={(e) => e.key === 'Enter' && handleQuizSpellingSubmit()}
+                                                    placeholder="输入英文单词…"
+                                                    disabled={quizQAnswered}
+                                                    style={{ flex: 1, padding: '12px 14px', borderRadius: 14, border: '1px solid var(--line)', background: 'rgba(255,255,255,0.04)', color: 'var(--text)', outline: 'none', fontSize: '1.05rem' }}
+                                                />
+                                                <button className="primary-button" type="button" onClick={handleQuizSpellingSubmit} disabled={quizQAnswered || !quizSpellingInput.trim()}>确认</button>
+                                            </div>
+                                            {quizQAnswered && (
+                                                <div className="answer-box" style={{ marginTop: 16 }}>
+                                                    <strong>{quizQCorrect ? '✅ 正确' : '❌ 错误'}</strong>
+                                                    {!quizShowExplanation ? (
+                                                        <button className="secondary-button" type="button" onClick={() => setQuizShowExplanation(true)}>显示解析</button>
+                                                    ) : (
+                                                        <>
+                                                            {!quizQCorrect && <p className="muted-text">正确答案：<strong style={{ color: 'var(--accent)' }}>{quizQuestions[quizQIndex].term}</strong></p>}
+                                                            <p className="muted-text">{quizQuestions[quizQIndex].note}</p>
+                                                            {quizQuestions[quizQIndex].example && (
+                                                                <div className="detail-example">
+                                                                    <strong>例句</strong>
+                                                                    <p>{quizQuestions[quizQIndex].example}</p>
+                                                                </div>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                    {quizQIndex + 1 >= quizQuestions.length ? (
+                                                        <button className="primary-button" type="button" onClick={handleQuizFinish}>查看结果</button>
+                                                    ) : (
+                                                        <button className="primary-button" type="button" onClick={handleQuizNext}>下一题</button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <p className="question-text">{quizQuestions[quizQIndex]?.type === 'cloze' ? '选择适合填入空格的单词：' : (quizQuestions[quizQIndex]?.contextNote ?? '选择正确释义：')}</p>
+                                            {quizQuestions[quizQIndex]?.type === 'cloze' && quizQuestions[quizQIndex]?.questionText && (
+                                                <div className="cloze-sentence">
+                                                    {quizQuestions[quizQIndex].questionText.split('___').map((part: string, i: number, arr: string[]) => (
+                                                        <span key={i}>{part}{i < arr.length - 1 && <span className="cloze-blank">______</span>}</span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <div className="option-grid">
+                                                {quizQuestions[quizQIndex]?.options?.map((option: string) => {
+                                                    const selected = quizQSelected === option;
+                                                    const isCorrect = quizQAnswered && option === quizQuestions[quizQIndex].correctMeaning;
+                                                    const isWrong = quizQAnswered && selected && !isCorrect;
+                                                    return (
+                                                        <button key={option} type="button" className={`option-card ${selected ? 'selected' : ''} ${isCorrect ? 'correct' : ''} ${isWrong ? 'wrong' : ''}`}
+                                                            onClick={() => !quizQAnswered && handleQuizChoice(option)} disabled={quizQAnswered}>
+                                                            {option}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                            {quizQAnswered && (
+                                                <div className="answer-box">
+                                                    <strong>{quizQCorrect ? '✅ 正确' : '❌ 错误'}</strong>
+                                                    {!quizShowExplanation ? (
+                                                        <button className="secondary-button" type="button" onClick={() => setQuizShowExplanation(true)}>显示解析</button>
+                                                    ) : (
+                                                        <>
+                                                            {!quizQCorrect && <p className="muted-text">正确答案：<strong style={{ color: 'var(--accent)' }}>{quizQuestions[quizQIndex].correctMeaning}</strong></p>}
+                                                            {quizQuestions[quizQIndex].example && (
+                                                                <div className="detail-example" style={{ marginTop: 8 }}>
+                                                                    <strong>例句</strong>
+                                                                    <p>{quizQuestions[quizQIndex].example}</p>
+                                                                </div>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                    {quizQIndex + 1 >= quizQuestions.length ? (
+                                                        <button className="primary-button" type="button" onClick={handleQuizFinish}>查看结果</button>
+                                                    ) : (
+                                                        <button className="primary-button" type="button" onClick={handleQuizNext}>下一题</button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </>
+                            )}
+
+                            {quizPhase === 'done' && (
+                                <div style={{ padding: '30px 0', textAlign: 'center', display: 'grid', gap: 16 }}>
+                                    <h2 style={{ fontSize: '1.8rem', color: quizQScore >= 60 ? 'var(--accent)' : 'var(--accent-alt)' }}>
+                                        {quizQScore >= 80 ? '🎉 太棒了！' : quizQScore >= 60 ? '👍 不错！' : '💪 继续加油！'}
+                                    </h2>
+                                    <div className="summary-grid" style={{ maxWidth: 300, margin: '0 auto' }}>
+                                        <div className="summary-card">
+                                            <span>答对</span>
+                                            <strong>{quizQCorrectCount}</strong>
+                                        </div>
+                                        <div className="summary-card">
+                                            <span>题目数</span>
+                                            <strong>{quizQuestions.length}</strong>
+                                        </div>
+                                        <div className="summary-card">
+                                            <span>正确率</span>
+                                            <strong>{quizQScore}%</strong>
+                                        </div>
+                                    </div>
+                                    <button className="primary-button" type="button" onClick={handleQuizReset} style={{ marginTop: 12 }}>再来一次</button>
+                                </div>
+                            )}
+                        </section>
+
                         <aside className="panel practice-summary">
-                            <p className="eyebrow">测验成绩</p>
-                            <h2>{quizScore}%</h2>
-                            <div className="summary-card wide">
-                                <span>答对</span>
-                                <strong>{quizSession.correctCount}</strong>
-                            </div>
-                            <div className="summary-card wide">
-                                <span>题目数</span>
-                                <strong>{quizSession.questions.length}</strong>
-                            </div>
-                            <div className="summary-card wide">
-                                <span>建议</span>
-                                <strong>优先复习低分词</strong>
-                            </div>
-                            <button className="primary-button" type="button" onClick={handleGenerateQuiz} disabled={quizGenerating}>
-                                {quizGenerating ? '生成中…' : '生成测验题'}
-                            </button>
+                            {quizPhase === 'setup' ? (
+                                <>
+                                    <p className="eyebrow">当前词表</p>
+                                    <h2>{activeList?.name ?? '无'}</h2>
+                                    <div className="summary-card wide"><span>单词数</span><strong>{activeList?.words.length ?? 0}</strong></div>
+                                    <div className="summary-card wide"><span>场景</span><strong>{activeList?.context ?? '-'}</strong></div>
+                                    <div className="summary-card wide"><span>已掌握</span><strong>{activeList?.words.filter((w) => w.mastered).length ?? 0}</strong></div>
+                                </>
+                            ) : quizPhase === 'active' ? (
+                                <>
+                                    <p className="eyebrow">答题进度</p>
+                                    <h2>{quizQScore}%</h2>
+                                    <div className="summary-card wide"><span>已答</span><strong>{quizQIndex + (quizQAnswered ? 1 : 0)}</strong></div>
+                                    <div className="summary-card wide"><span>剩余</span><strong>{quizQuestions.length - quizQIndex - (quizQAnswered ? 1 : 0)}</strong></div>
+                                    <div style={{ borderTop: '1px solid var(--line)', marginTop: 12, paddingTop: 12 }}>
+                                        <p className="muted-text" style={{ fontSize: '0.85rem', marginBottom: 8 }}>题型分布</p>
+                                        {[
+                                            { type: 'meaning', label: '词义匹配', color: 'var(--accent-alt)' },
+                                            { type: 'spelling', label: '拼写题', color: 'var(--accent)' },
+                                            { type: 'cloze', label: '完形填空', color: '#f59e0b' }
+                                        ].map((t) => {
+                                            const count = quizQuestions.filter((q) => q.type === t.type).length;
+                                            return (
+                                                <div key={t.type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: '0.85rem' }}>
+                                                    <span><span style={{ color: count ? t.color : 'var(--muted)', marginRight: 6 }}>●</span>{t.label}</span>
+                                                    <strong style={{ color: count ? 'var(--text)' : 'var(--danger)' }}>{count || '失败'}</strong>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="eyebrow">测验结果</p>
+                                    <h2>{quizQScore}%</h2>
+                                    <div className="summary-card wide"><span>答对</span><strong>{quizQCorrectCount}</strong></div>
+                                    <div className="summary-card wide"><span>总题</span><strong>{quizQuestions.length}</strong></div>
+                                </>
+                            )}
                         </aside>
                     </section>
                 )}
@@ -1360,12 +1689,16 @@ function App() {
                 )}
 
                 {activeTab === 'progress' && (
-                    <section className="dashboard-grid">
+                    <section className="dashboard-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
                         <div className="panel progress-panel">
                             <p className="eyebrow">整体进度</p>
                             <h2>{stats.averageScore}% 平均掌握度</h2>
                             <div className="progress-bars">
-                                {state.lists.map((list) => {
+                                {[...state.lists].sort((a, b) => {
+                                    const aAvg = Math.round(a.words.reduce((s, w) => s + w.score, 0) / Math.max(1, a.words.length));
+                                    const bAvg = Math.round(b.words.reduce((s, w) => s + w.score, 0) / Math.max(1, b.words.length));
+                                    return aAvg - bAvg;
+                                }).map((list) => {
                                     const total = list.words.length || 1;
                                     const mastered = list.words.filter((word) => word.mastered).length;
                                     const average = Math.round(list.words.reduce((sum, word) => sum + word.score, 0) / total);
@@ -1387,9 +1720,43 @@ function App() {
                         </div>
 
                         <div className="panel progress-panel">
+                            <p className="eyebrow">需要复习</p>
+                            <h2>最薄弱单词</h2>
+                            <div className="mini-progress-list">
+                                {state.lists.flatMap((l) => l.words).sort((a, b) => a.score - b.score).slice(0, 6).map((word) => (
+                                    <div key={word.id} className="mini-progress-item">
+                                        <div>
+                                            <strong>{word.term}</strong>
+                                            <p>{word.meaning}</p>
+                                        </div>
+                                        <span style={{ color: word.score < 40 ? 'var(--danger)' : 'var(--accent-alt)' }}>{word.score}%</span>
+                                    </div>
+                                ))}
+                                {stats.wordCount === 0 && <div className="empty-state">还没有单词。</div>}
+                            </div>
+                        </div>
+
+                        <div className="panel progress-panel">
+                            <p className="eyebrow">掌握较好</p>
+                            <h2>已掌握单词</h2>
+                            <div className="mini-progress-list">
+                                {state.lists.flatMap((l) => l.words).filter((w) => w.mastered).sort((a, b) => b.score - a.score).slice(0, 6).map((word) => (
+                                    <div key={word.id} className="mini-progress-item">
+                                        <div>
+                                            <strong>{word.term}</strong>
+                                            <p>{word.meaning}</p>
+                                        </div>
+                                        <span style={{ color: 'var(--accent)' }}>{word.score}%</span>
+                                    </div>
+                                ))}
+                                {stats.masteredCount === 0 && <div className="empty-state">暂无已掌握单词，继续练习吧。</div>}
+                            </div>
+                        </div>
+
+                        <div className="panel progress-panel" style={{ gridColumn: '1 / -1' }}>
                             <p className="eyebrow">当前词表明细</p>
                             <h2>{activeList?.name ?? '无词表'}</h2>
-                            <div className="summary-grid">
+                            <div className="summary-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 12 }}>
                                 <div className="summary-card">
                                     <span>单词数</span>
                                     <strong>{activeWordCount}</strong>
@@ -1404,7 +1771,7 @@ function App() {
                                 </div>
                             </div>
                             <div className="mini-progress-list">
-                                {activeList?.words.map((word) => (
+                                {activeList?.words.sort((a, b) => a.score - b.score).map((word) => (
                                     <div key={word.id} className="mini-progress-item">
                                         <div>
                                             <strong>{word.term}</strong>
