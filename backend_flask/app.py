@@ -33,6 +33,72 @@ def get_config():
     })
 
 
+@app.route('/api/text-proxy', methods=['POST'])
+def text_proxy():
+    """通用文本代理，供语音对话等功能复用"""
+    data = request.get_json() or {}
+    prompt = data.get('prompt', '')
+    model = data.get('model') or DEFAULT_MODEL
+    max_tokens = int(data.get('max_tokens', 400))
+    temperature = float(data.get('temperature', 0.7))
+
+    if not prompt:
+        return jsonify({'error': 'prompt is required'}), 400
+    if not OPENAI_API_KEY:
+        return jsonify({'error': 'missing API key'}), 500
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{'role': 'user', 'content': prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+        return jsonify({
+            'status_code': 200,
+            'provider_response': response.to_dict()
+        })
+    except Exception as e:
+        app.logger.exception('text-proxy failed')
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    """多轮对话端点，接收历史消息和系统提示词"""
+    data = request.get_json() or {}
+    messages = data.get('messages', [])
+    system_prompt = data.get('system', '')
+
+    if not messages or not isinstance(messages, list):
+        return jsonify({'error': 'messages array is required'}), 400
+    if not OPENAI_API_KEY:
+        return jsonify({'error': 'server missing API key'}), 500
+
+    full_messages = []
+    if system_prompt:
+        full_messages.append({'role': 'system', 'content': system_prompt})
+    for msg in messages[-20:]:  # 最多保留 20 条历史
+        if isinstance(msg, dict) and msg.get('role') and msg.get('content'):
+            full_messages.append({'role': msg['role'], 'content': msg['content']})
+
+    try:
+        response = client.chat.completions.create(
+            model=DEFAULT_MODEL,
+            messages=full_messages,
+            max_tokens=300,
+            temperature=0.8
+        )
+        return jsonify({
+            'text': response.choices[0].message.content or '',
+            'status_code': 200
+        })
+    except Exception as e:
+        app.logger.exception('chat failed')
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/api/generate-words', methods=['POST'])
 @app.route('/api/generate-words', methods=['POST'])
 def generate_words():
     """使用 AI 为指定场景生成词汇"""

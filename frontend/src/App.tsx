@@ -397,12 +397,69 @@ function App() {
 
     const [quizGenerating, setQuizGenerating] = useState(false);
 
-    // Voice chat state
-    const [voiceMessages, setVoiceMessages] = useState<Array<{role: 'user'|'ai'; text: string}>>([]);
-    const [voiceStatus, setVoiceStatus] = useState<'idle'|'listening'|'processing'|'speaking'>('idle');
+    // Voice chat state — 多轮对话 agent
+    const [voiceHistory, setVoiceHistory] = useState<Array<{ role: string; content: string }>>([]);
+    const [voiceDisplay, setVoiceDisplay] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([]);
+    const [voiceStatus, setVoiceStatus] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
     const [voiceListening, setVoiceListening] = useState(false);
     const recognitionRef = useRef<any>(null);
     const synthRef = useRef(window.speechSynthesis);
+
+    const voiceSystemPrompt = useMemo(() => {
+        if (!activeList) return '你是一个友好的语言学习助手。';
+
+        const words = activeList.words.map((w) => `${w.term}(${w.meaning})`).join(', ');
+        return `你是一个英语口语陪练，你正在扮演${activeList.context}场景下的角色。
+
+对话规则：
+- 全程用英语交流、用词简单
+- 你的角色是${activeList.context}场景中的对话者（如店员、朋友、导游等）
+- 用户扮演该场景中的另一个角色
+- 尽量自然地使用以下词表中的单词：${words}
+- 每次回复 1-3 句，不要长篇大论
+- 如果用户说中文，先用英语回答，再简单解释`;
+    }, [activeList]);
+
+    const speakText = (text: string) => {
+        synthRef.current.cancel();
+        setVoiceStatus('speaking');
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'en-US';
+        utterance.rate = 0.9;
+        utterance.onend = () => {
+            setVoiceStatus('idle');
+            setVoiceListening(false);
+        };
+        synthRef.current.speak(utterance);
+    };
+
+    const sendToAgent = async (userText: string) => {
+        setVoiceDisplay((prev) => [...prev, { role: 'user', text: userText }]);
+        const newHistory = [...voiceHistory, { role: 'user', content: userText }];
+        setVoiceHistory(newHistory);
+        setVoiceStatus('processing');
+
+        try {
+            const resp = await fetch('http://localhost:5001/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    system: voiceSystemPrompt,
+                    messages: newHistory
+                }),
+                signal: AbortSignal.timeout(15000)
+            });
+            const data = await resp.json();
+            const reply = data?.text || 'Sorry, I didn\'t catch that.';
+            setVoiceDisplay((prev) => [...prev, { role: 'ai', text: reply }]);
+            setVoiceHistory((prev) => [...prev, { role: 'assistant', content: reply }]);
+            speakText(reply);
+        } catch {
+            setVoiceDisplay((prev) => [...prev, { role: 'ai', text: 'Connection failed. Please retry.' }]);
+            setVoiceStatus('idle');
+            setVoiceListening(false);
+        }
+    };
 
     const startVoiceChat = () => {
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -415,43 +472,12 @@ function App() {
         setVoiceStatus('listening');
 
         const recognition = new SpeechRecognition();
-        recognition.lang = 'zh-CN';
+        recognition.lang = 'zh-CN';  // zh-CN 模式下可同时识别中文和英语单词
         recognition.interimResults = false;
-        recognition.continuous = false;
 
-        recognition.onresult = async (event: any) => {
+        recognition.onresult = (event: any) => {
             const transcript = event.results[0][0].transcript;
-            setVoiceMessages((prev) => [...prev, { role: 'user', text: transcript }]);
-            setVoiceStatus('processing');
-
-            try {
-                const resp = await fetch('http://localhost:5001/api/text-proxy', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        prompt: `你是一个英语词汇学习助手。用户正在学习单词，用中文回答，帮助用户练习。用户说：${transcript}`,
-                        max_tokens: 200,
-                        temperature: 0.7
-                    }),
-                    signal: AbortSignal.timeout(10000)
-                });
-                const data = await resp.json();
-                const reply = data?.provider_response?.choices?.[0]?.message?.content || '抱歉，我没听清。';
-                setVoiceMessages((prev) => [...prev, { role: 'ai', text: reply }]);
-
-                setVoiceStatus('speaking');
-                const utterance = new SpeechSynthesisUtterance(reply);
-                utterance.lang = 'zh-CN';
-                utterance.onend = () => {
-                    setVoiceStatus('idle');
-                    setVoiceListening(false);
-                };
-                synthRef.current.speak(utterance);
-            } catch {
-                setVoiceMessages((prev) => [...prev, { role: 'ai', text: '网络连接失败，请检查后端是否运行。' }]);
-                setVoiceStatus('idle');
-                setVoiceListening(false);
-            }
+            sendToAgent(transcript);
         };
 
         recognition.onerror = () => {
@@ -472,16 +498,15 @@ function App() {
     };
 
     const stopVoiceChat = () => {
-        if (recognitionRef.current) {
-            recognitionRef.current.stop();
-        }
+        if (recognitionRef.current) recognitionRef.current.stop();
         synthRef.current.cancel();
         setVoiceListening(false);
         setVoiceStatus('idle');
     };
 
     const clearVoiceChat = () => {
-        setVoiceMessages([]);
+        setVoiceHistory([]);
+        setVoiceDisplay([]);
         setVoiceStatus('idle');
         setVoiceListening(false);
     };
@@ -1287,10 +1312,13 @@ function App() {
                             </div>
 
                             <div className="voice-messages">
-                                {voiceMessages.length === 0 && (
-                                    <div className="empty-state">点击「开始对话」用语音和 AI 练习词汇。支持中英文混合对话。</div>
+                                {voiceDisplay.length === 0 && (
+                                    <div className="empty-state">
+                                        <p><strong>场景：{activeList?.context ?? '自由对话'}</strong></p>
+                                        <p>点击「开始对话」进入角色扮演。AI 会扮演该场景中的角色，用英语与你互动。</p>
+                                    </div>
                                 )}
-                                {voiceMessages.map((msg, i) => (
+                                {voiceDisplay.map((msg, i) => (
                                     <div key={i} className={`voice-msg voice-msg-${msg.role}`}>
                                         <strong>{msg.role === 'user' ? '你' : 'AI'}</strong>
                                         <p>{msg.text}</p>
@@ -1308,7 +1336,7 @@ function App() {
                                         ⏹ 结束对话
                                     </button>
                                 )}
-                                {voiceMessages.length > 0 && (
+                                {voiceDisplay.length > 0 && (
                                     <button className="ghost-button" type="button" onClick={clearVoiceChat}>清空记录</button>
                                 )}
                             </div>
@@ -1324,7 +1352,9 @@ function App() {
                                 <span>场景</span>
                                 <strong>{activeList?.context ?? '-'}</strong>
                             </div>
-                            <p className="muted-text" style={{ marginTop: 16 }}>AI 会基于当前词表与你进行口语对话练习，帮助巩固词汇。</p>
+                            <p className="muted-text" style={{ marginTop: 16 }}>
+                                <strong>角色扮演</strong>：AI 扮演「{activeList?.context ?? '自由对话'}」场景角色，与你进行英语对话练习。多轮对话会自动记忆上下文。
+                            </p>
                         </aside>
                     </section>
                 )}
