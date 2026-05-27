@@ -1099,30 +1099,44 @@ button {
 }
 
 /* 消息内 Markdown 样式 */
-.voice-msg p { margin: 0; line-height: 1.6; }
+.voice-msg p {
+    margin: 0;
+    line-height: 1.6;
+}
+
 .voice-msg code {
-    background: rgba(255,255,255,0.08);
+    background: rgba(255, 255, 255, 0.08);
     padding: 1px 5px;
     border-radius: 4px;
     font-size: 0.85em;
 }
+
 .voice-msg pre {
-    background: rgba(0,0,0,0.3);
+    background: rgba(0, 0, 0, 0.3);
     padding: 10px 14px;
     border-radius: 8px;
     overflow-x: auto;
     margin: 8px 0;
 }
+
 .voice-msg pre code {
     background: none;
     padding: 0;
 }
-.voice-msg ul, .voice-msg ol {
+
+.voice-msg ul,
+.voice-msg ol {
     margin: 6px 0;
     padding-left: 20px;
 }
-.voice-msg li { margin: 2px 0; }
-.voice-msg strong { color: var(--accent-alt); }
+
+.voice-msg li {
+    margin: 2px 0;
+}
+
+.voice-msg strong {
+    color: var(--accent-alt);
+}
 
 .voice-msg-user {
     background: rgba(91, 228, 155, 0.08);

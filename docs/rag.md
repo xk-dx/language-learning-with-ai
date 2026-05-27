@@ -30,12 +30,12 @@
 
 ### 后端模块（`backend_flask/rag/`）
 
-| 文件 | 说明 |
-|------|------|
-| `embedder.py` | 本地 `sentence-transformers` 封装（`all-MiniLM-L6-v2`，384 维，离线运行） |
-| `vector_store.py` | 轻量向量存储：`docs.json` 存文本，`vectors.npy` 存向量矩阵，NumPy 做 cosine similarity 检索 |
-| `pdf_processor.py` | PDF 切片引擎：按页→按块→超长块按句子拆分，保留页码元数据 |
-| `rag_engine.py` | 顶层封装：`ingest_pdf()` → `search()` → `search_with_prompt()` |
+| 文件               | 说明                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------- |
+| `embedder.py`      | 本地 `sentence-transformers` 封装（`all-MiniLM-L6-v2`，384 维，离线运行）                   |
+| `vector_store.py`  | 轻量向量存储：`docs.json` 存文本，`vectors.npy` 存向量矩阵，NumPy 做 cosine similarity 检索 |
+| `pdf_processor.py` | PDF 切片引擎：按页→按块→超长块按句子拆分，保留页码元数据                                    |
+| `rag_engine.py`    | 顶层封装：`ingest_pdf()` → `search()` → `search_with_prompt()`                              |
 
 ### 存储结构
 
@@ -60,13 +60,13 @@ top_k = argsort(scores)[-5:]        # 取 top-5
 
 ## API 端点
 
-| 路由 | 方法 | 功能 |
-|------|------|------|
+| 路由                  | 方法 | 功能                                                  |
+| --------------------- | ---- | ----------------------------------------------------- |
 | `/api/rag/upload-pdf` | POST | 上传 PDF（multipart/form-data），自动切片+向量化+入库 |
-| `/api/rag/search` | POST | 向量检索，返回 `[{id, text, metadata, score}]` |
-| `/api/rag/context` | POST | 检索并返回可直接拼入 prompt 的上下文字符串 |
-| `/api/rag/stats` | GET | 查看知识库统计（段落数 + 文件列表） |
-| `/api/rag/clear` | POST | 清空所有数据 |
+| `/api/rag/search`     | POST | 向量检索，返回 `[{id, text, metadata, score}]`        |
+| `/api/rag/context`    | POST | 检索并返回可直接拼入 prompt 的上下文字符串            |
+| `/api/rag/stats`      | GET  | 查看知识库统计（段落数 + 文件列表）                   |
+| `/api/rag/clear`      | POST | 清空所有数据                                          |
 
 ### 请求示例
 
@@ -107,15 +107,15 @@ curl http://localhost:5001/api/rag/stats
 
 ## 配置参数
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
+| 参数           | 默认值             | 说明                                         |
+| -------------- | ------------------ | -------------------------------------------- |
 | Embedding 模型 | `all-MiniLM-L6-v2` | 本地 sentence-transformers，384 维，离线运行 |
-| 切片最小字符 | 50 | 少于该长度的文本块丢弃 |
-| 切片最大字符 | 800 | 超长块按句子拆分 |
-| 检索 top-k | 3 | 每次检索返回的最相关段落数 |
-| 最大上下文长度 | 1200 chars | 拼入 prompt 的检索内容上限 |
-| 对话历史 | 100 条 | 保留最近 100 条消息（约 50 轮） |
-| 相似度阈值 | 0.1 | 低于此分数的结果不返回 |
+| 切片最小字符   | 50                 | 少于该长度的文本块丢弃                       |
+| 切片最大字符   | 800                | 超长块按句子拆分                             |
+| 检索 top-k     | 3                  | 每次检索返回的最相关段落数                   |
+| 最大上下文长度 | 1200 chars         | 拼入 prompt 的检索内容上限                   |
+| 对话历史       | 100 条             | 保留最近 100 条消息（约 50 轮）              |
+| 相似度阈值     | 0.1                | 低于此分数的结果不返回                       |
 
 ## 文件依赖
 
@@ -130,15 +130,15 @@ sentence-transformers>=2.2  # 本地 embedding 模型
 
 ## 实现文件
 
-| 文件 | 职责 |
-|------|------|
-| `backend_flask/rag/embedder.py` | Embedding API 调用 |
-| `backend_flask/rag/vector_store.py` | 向量存储 + 检索 |
-| `backend_flask/rag/pdf_processor.py` | PDF 切片 |
-| `backend_flask/rag/rag_engine.py` | 顶层引擎 |
-| `backend_flask/app.py` | RAG 路由（`/api/rag/*`） |
-| `frontend/src/App.tsx` | `uploadPdf()` / `sendRagMessage()` / `fetchRagStats()` |
-| `frontend/src/styles.css` | Agent 模式切换 / RAG 输入框样式 |
+| 文件                                 | 职责                                                   |
+| ------------------------------------ | ------------------------------------------------------ |
+| `backend_flask/rag/embedder.py`      | Embedding API 调用                                     |
+| `backend_flask/rag/vector_store.py`  | 向量存储 + 检索                                        |
+| `backend_flask/rag/pdf_processor.py` | PDF 切片                                               |
+| `backend_flask/rag/rag_engine.py`    | 顶层引擎                                               |
+| `backend_flask/app.py`               | RAG 路由（`/api/rag/*`）                               |
+| `frontend/src/App.tsx`               | `uploadPdf()` / `sendRagMessage()` / `fetchRagStats()` |
+| `frontend/src/styles.css`            | Agent 模式切换 / RAG 输入框样式                        |
 
 ## 注意事项
 

@@ -567,7 +567,7 @@ function App() {
     // RAG PDF 上传状态
     const [ragUploading, setRagUploading] = useState(false);
     const [ragChunks, setRagChunks] = useState(0);
-    const [ragFiles, setRagFiles] = useState<Array<{filename: string; chunks: number; pages: number; uploaded_at: string}>>([]);
+    const [ragFiles, setRagFiles] = useState<Array<{ filename: string; chunks: number; pages: number; uploaded_at: string }>>([]);
     const [ragError, setRagError] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -725,11 +725,11 @@ function App() {
     // 各模式独立保存对话记录
     const [voiceSession, setVoiceSession] = useState<{
         history: Array<{ role: string; content: string }>;
-        display: Array<{ role: 'user' | 'ai'; text: string; sources?: {file: string; page: number}[] }>;
+        display: Array<{ role: 'user' | 'ai'; text: string; sources?: { file: string; page: number }[] }>;
     }>({ history: [], display: [] });
     const [ragSession, setRagSession] = useState<{
         history: Array<{ role: string; content: string }>;
-        display: Array<{ role: 'user' | 'ai'; text: string; sources?: {file: string; page: number}[] }>;
+        display: Array<{ role: 'user' | 'ai'; text: string; sources?: { file: string; page: number }[] }>;
     }>({ history: [], display: [] });
 
     // 当前模式对应的对话记录
@@ -744,7 +744,7 @@ function App() {
         }));
     }, [agentMode]);
 
-    const setVoiceDisplay = useCallback((updater: Array<{ role: 'user' | 'ai'; text: string; sources?: {file: string; page: number}[] }> | ((prev: Array<{ role: 'user' | 'ai'; text: string; sources?: {file: string; page: number}[] }>) => Array<{ role: 'user' | 'ai'; text: string; sources?: {file: string; page: number}[] }>)) => {
+    const setVoiceDisplay = useCallback((updater: Array<{ role: 'user' | 'ai'; text: string; sources?: { file: string; page: number }[] }> | ((prev: Array<{ role: 'user' | 'ai'; text: string; sources?: { file: string; page: number }[] }>) => Array<{ role: 'user' | 'ai'; text: string; sources?: { file: string; page: number }[] }>)) => {
         const setter = agentMode === 'voice' ? setVoiceSession : setRagSession;
         setter((prev: any) => ({
             ...prev,
@@ -770,7 +770,7 @@ function App() {
 
         try {
             let ragContext = '';
-            let sources: {file: string; page: number}[] = [];
+            let sources: { file: string; page: number }[] = [];
             try {
                 const ragResp = await fetch('http://localhost:5001/api/rag/search', {
                     method: 'POST',
@@ -1891,7 +1891,7 @@ function App() {
                                         {voiceDisplay.map((msg, i) => (
                                             <div key={i} className={`voice-msg voice-msg-${msg.role}`}>
                                                 <strong>{msg.role === 'user' ? '你' : 'AI'}</strong>
-                                                <p dangerouslySetInnerHTML={{__html: renderMarkdown(msg.text)}} />
+                                                <p dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
                                             </div>
                                         ))}
                                     </div>
@@ -1945,7 +1945,7 @@ function App() {
                                         {voiceDisplay.map((msg, i) => (
                                             <div key={i} className={`voice-msg voice-msg-${msg.role}`}>
                                                 <strong>{msg.role === 'user' ? '你' : 'AI'}</strong>
-                                                <p dangerouslySetInnerHTML={{__html: renderMarkdown(msg.text)}} />
+                                                <p dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
                                                 {msg.sources && msg.sources.length > 0 && (
                                                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
                                                         {msg.sources.map((s, si) => (
@@ -2004,69 +2004,69 @@ function App() {
                             </div>
 
                             {agentMode === 'rag' && (<>
-                            <hr className="divider" style={{ margin: '12px 0' }} />
+                                <hr className="divider" style={{ margin: '12px 0' }} />
 
-                            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept=".pdf"
-                                    style={{ display: 'none' }}
-                                    onChange={handleFileSelect}
-                                />
-                                <button
-                                    className="primary-button"
-                                    type="button"
-                                    onClick={() => fileInputRef.current?.click()}
-                                    disabled={ragUploading}
-                                    style={{ flex: 1, padding: '8px 12px', fontSize: '0.85rem' }}
-                                >
-                                    {ragUploading ? '上传中…' : '📄 上传 PDF'}
-                                </button>
-                                {ragFiles.length > 0 && (
+                                <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept=".pdf"
+                                        style={{ display: 'none' }}
+                                        onChange={handleFileSelect}
+                                    />
                                     <button
-                                        className="ghost-button danger"
+                                        className="primary-button"
                                         type="button"
-                                        onClick={async () => {
-                                            try {
-                                                await fetch('http://localhost:5001/api/rag/clear', { method: 'POST' });
-                                                await fetchRagStats();
-                                                notify('知识库已清空');
-                                            } catch { notify('清空失败'); }
-                                        }}
-                                        style={{ padding: '8px 10px', fontSize: '0.8rem' }}
-                                        title="清空知识库"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={ragUploading}
+                                        style={{ flex: 1, padding: '8px 12px', fontSize: '0.85rem' }}
                                     >
-                                        🗑
+                                        {ragUploading ? '上传中…' : '📄 上传 PDF'}
                                     </button>
-                                )}
-                            </div>
-
-                            {ragError && (
-                                <p className="muted-text" style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginBottom: 6 }}>
-                                    {ragError}
-                                </p>
-                            )}
-
-                            {/* 已上传文件列表 */}
-                            {ragFiles.length > 0 && (
-                                <div style={{ maxHeight: 180, overflowY: 'auto' }}>
-                                    {ragFiles.slice().reverse().map((f, i) => (
-                                        <div key={i} style={{
-                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                            padding: '6px 8px', marginBottom: 3,
-                                            background: 'var(--bg-soft)', borderRadius: 8, fontSize: '0.8rem'
-                                        }}>
-                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                                                📄 {f.filename}
-                                            </span>
-                                            <span className="muted-text" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', marginLeft: 8 }}>
-                                                {f.chunks}段·{f.pages}页
-                                            </span>
-                                        </div>
-                                    ))}
+                                    {ragFiles.length > 0 && (
+                                        <button
+                                            className="ghost-button danger"
+                                            type="button"
+                                            onClick={async () => {
+                                                try {
+                                                    await fetch('http://localhost:5001/api/rag/clear', { method: 'POST' });
+                                                    await fetchRagStats();
+                                                    notify('知识库已清空');
+                                                } catch { notify('清空失败'); }
+                                            }}
+                                            style={{ padding: '8px 10px', fontSize: '0.8rem' }}
+                                            title="清空知识库"
+                                        >
+                                            🗑
+                                        </button>
+                                    )}
                                 </div>
-                            )}
+
+                                {ragError && (
+                                    <p className="muted-text" style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginBottom: 6 }}>
+                                        {ragError}
+                                    </p>
+                                )}
+
+                                {/* 已上传文件列表 */}
+                                {ragFiles.length > 0 && (
+                                    <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                                        {ragFiles.slice().reverse().map((f, i) => (
+                                            <div key={i} style={{
+                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                                padding: '6px 8px', marginBottom: 3,
+                                                background: 'var(--bg-soft)', borderRadius: 8, fontSize: '0.8rem'
+                                            }}>
+                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                                    📄 {f.filename}
+                                                </span>
+                                                <span className="muted-text" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', marginLeft: 8 }}>
+                                                    {f.chunks}段·{f.pages}页
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </>)}
                         </aside>
                     </section>
