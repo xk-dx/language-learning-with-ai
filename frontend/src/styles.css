@@ -161,7 +161,10 @@ button {
     letter-spacing: 0.05em;
 }
 
-
+.divider {
+    border: none;
+    border-top: 1px solid var(--line);
+}
 
 .muted-text,
 .list-card p,
@@ -590,13 +593,14 @@ button {
 
 .practice-layout {
     grid-template-columns: minmax(0, 1.35fr) minmax(280px, 320px);
-    align-items: start;
+    align-items: stretch;
 }
 
 .practice-panel,
 .practice-summary {
     display: grid;
     gap: 16px;
+    align-content: start;
 }
 
 .question-text {
@@ -1022,6 +1026,61 @@ button {
     justify-content: center;
 }
 
+/* Agent 模式切换 */
+.agent-mode-tabs {
+    display: flex;
+    gap: 6px;
+    background: var(--bg-soft);
+    padding: 4px;
+    border-radius: 12px;
+}
+
+.agent-mode-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.agent-mode-btn.active {
+    background: var(--panel);
+    color: var(--text);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.agent-mode-btn:hover:not(.active) {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* RAG 文字输入 */
+.rag-text-input {
+    flex: 1;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--panel-border);
+    background: var(--bg-soft);
+    color: var(--text);
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.rag-text-input:focus {
+    border-color: var(--accent);
+}
+
+.rag-text-input::placeholder {
+    color: var(--muted);
+    opacity: 0.6;
+}
+
 /* Voice chat */
 .voice-messages {
     display: grid;
@@ -1038,6 +1097,32 @@ button {
     border: 1px solid var(--line);
     max-width: 85%;
 }
+
+/* 消息内 Markdown 样式 */
+.voice-msg p { margin: 0; line-height: 1.6; }
+.voice-msg code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.85em;
+}
+.voice-msg pre {
+    background: rgba(0,0,0,0.3);
+    padding: 10px 14px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 8px 0;
+}
+.voice-msg pre code {
+    background: none;
+    padding: 0;
+}
+.voice-msg ul, .voice-msg ol {
+    margin: 6px 0;
+    padding-left: 20px;
+}
+.voice-msg li { margin: 2px 0; }
+.voice-msg strong { color: var(--accent-alt); }
 
 .voice-msg-user {
     background: rgba(91, 228, 155, 0.08);

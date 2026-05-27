@@ -14,7 +14,23 @@
 | 📊 进度         | 整体进度条、最薄弱单词排行、已掌握单词排行、按分数排序的词表明细                         |
 | 🤖 智能发现     | AI 根据场景生成真实英语词汇候选，可逐个或批量加入词表                                    |
 | 🖼️ 单词配图     | 在单词详情页搜索 Pexels 免费图库配图（需配置 API Key）                                   |
-| 🎤 语音对话     | 多轮角色扮演：AI 根据词表场景扮演角色（店员/导游等），全英文语音对话，自动记忆对话上下文 |
+| 🤖 Agent        | 双模式 AI 助手：🎤 语音角色扮演（多轮英语对话，自动记忆上下文）+ 📄 PDF 知识问答（RAG）  |
+
+## Agent 智能助手
+
+Agent 页面提供两种交互模式，可在顶部一键切换：
+
+### 🎤 语音对话模式
+- 根据词表场景自动生成 AI 角色提示词
+- 浏览器原生语音识别 (STT) + 语音合成 (TTS)，**零成本**
+- 多轮对话自动记忆上下文（最近 100 条）
+- AI 全英文角色扮演（店员、导游、朋友等）
+
+### 📄 PDF 问答模式（RAG）
+- 上传 PDF 学习资料，自动切片 + 向量化
+- 基于 DeepSeek Embedding + NumPy 向量检索
+- 提问时自动检索相关段落，AI 结合资料回答
+- 支持多份 PDF 同时检索，保留上传历史
 
 ## 项目结构
 
@@ -33,13 +49,22 @@ my_wordpecker/
 ├── backend_flask/      # Flask AI 代理服务
 │   ├── app.py              # 端点：config, text-proxy, chat, generate-words,
 │   │                       #  complete-word, generate-reading, find-image,
-│   │                       #  generate-quiz-extra
+│   │                       #  generate-quiz-extra, rag/upload-pdf, rag/search,
+│   │                       #  rag/context, rag/stats, rag/clear
+│   ├── rag/                # RAG 引擎模块
+│   │   ├── __init__.py
+│   │   ├── rag_engine.py   # RAG 顶层封装
+│   │   ├── embedder.py     # DeepSeek Embedding 封装
+│   │   ├── vector_store.py # NumPy 向量存储（JSON + .npy）
+│   │   └── pdf_processor.py# PDF 切片解析
+│   ├── data/rag_store/     # 向量数据持久化目录
 │   ├── requirements.txt
 │   ├── .env.example
 │   └── README.md
 │
 ├── docs/
-│   └── voice-chat.md    # 语音对话功能详细说明
+│   ├── voice-chat.md    # 语音对话功能详细说明
+│   └── rag.md           # RAG 知识问答功能详细说明
 │
 └── README.md           # 本文件
 ```
@@ -83,6 +108,7 @@ python app.py
 | `DEFAULT_MODEL`                        | 否   | `deepseek-v4-flash`        | 聊天模型名                          |
 | `PEXELS_API_KEY`                       | 否   | —                          | Pexels 免费图库 Key（用于单词配图） |
 | `PORT`                                 | 否   | `5001`                     | Flask 服务端口                      |
+| `RAG_DATA_DIR`                         | 否   | `data/rag_store/`          | RAG 向量数据存储目录                |
 
 ## 特色
 
@@ -91,12 +117,14 @@ python app.py
 - **主题切换**：顶部一键切换暗色/亮色，持久化到 localStorage
 - **多题型测验**：词义匹配 + 拼写题 + 完形填空 ，每题先给反馈再选择是否查看解析
 - **语音角色扮演**：根据词表场景自动生成 AI 角色提示词，多轮英语对话，自动记忆上下文
+- **RAG 知识问答**：上传 PDF 资料，AI 自动检索相关内容回答问题，支持多文档
 
 ## 技术栈
 
 - **前端**: React 18 + Vite + TypeScript
 - **后端**: Flask + OpenAI SDK + Pexels API
-- **数据**: 前端 localStorage（无后端依赖）
+- **RAG**: 本地 `sentence-transformers`（`all-MiniLM-L6-v2`）+ NumPy 向量检索 + PyMuPDF 解析
+- **数据**: 前端 localStorage + 后端 JSON/NumPy 文件持久化
 - **AI 提供商**: 兼容 OpenAI / DeepSeek 等任何 OpenAI 兼容接口
 - **语音**: 浏览器 Web Speech API — `SpeechRecognition`（语音识别 STT）+ `speechSynthesis`（语音合成 TTS），纯浏览器端，零额外依赖，无需 API Key
 - **语音对话 Agent**: 多轮记忆（最近 20 轮）+ 动态角色提示词（根据词表场景自动生成）+ 全英文角色扮演

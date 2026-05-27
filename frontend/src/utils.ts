@@ -275,3 +275,47 @@ export function buildLocalCloze(
 
     return results;
 }
+
+/** 基础 Markdown 渲染 — 将 Markdown 文本转为安全的 HTML */
+export function renderMarkdown(text: string): string {
+    let html = text
+        // 转义 HTML 特殊字符
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+
+        // 代码块 (```...```)
+        .replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
+            `<pre><code>${code.trim()}</code></pre>`
+        )
+
+        // 行内代码 (`code`)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+
+        // 加粗 (**text**)
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+
+        // 斜体 (*text*)
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+
+        // 换行 -> <br>
+        .replace(/\n/g, '<br>')
+
+        // 无序列表
+        .replace(/((?:<br>• [^<]+)+)/g, (match) => {
+            const items = match.split('<br>').filter(Boolean).map(line =>
+                `<li>${line.replace(/^• /, '')}</li>`
+            ).join('');
+            return `<ul>${items}</ul>`;
+        })
+
+        // 有序列表
+        .replace(/((?:<br>\d+\. [^<]+)+)/g, (match) => {
+            const items = match.split('<br>').filter(Boolean).map(line =>
+                `<li>${line.replace(/^\d+\. /, '')}</li>`
+            ).join('');
+            return `<ol>${items}</ol>`;
+        });
+
+    return html;
+}

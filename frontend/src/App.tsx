@@ -14,7 +14,8 @@ import {
     buildLocalReading,
     buildLocalCloze,
     logActivity,
-    getActivityStats
+    getActivityStats,
+    renderMarkdown
 } from './utils';
 import { fetchGeneratedWords, fetchWordCompletion, fetchReading, fetchImage, fetchQuizExtras } from './apiService';
 
@@ -25,7 +26,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
     { id: 'lists', label: '词表' },
     { id: 'learn', label: '学习' },
     { id: 'quiz', label: '测验' },
-    { id: 'voice', label: '语音' },
+    { id: 'voice', label: 'Agent' },
     { id: 'progress', label: '进度' }
 ];
 
@@ -530,8 +531,6 @@ function App() {
     };
 
     // Voice chat state — 多轮对话 agent
-    const [voiceHistory, setVoiceHistory] = useState<Array<{ role: string; content: string }>>([]);
-    const [voiceDisplay, setVoiceDisplay] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([]);
     const [voiceStatus, setVoiceStatus] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
     const [voiceListening, setVoiceListening] = useState(false);
     const recognitionRef = useRef<any>(null);
@@ -565,19 +564,94 @@ function App() {
         synthRef.current.speak(utterance);
     };
 
+    // RAG PDF 上传状态
+    const [ragUploading, setRagUploading] = useState(false);
+    const [ragChunks, setRagChunks] = useState(0);
+    const [ragFiles, setRagFiles] = useState<Array<{filename: string; chunks: number; pages: number; uploaded_at: string}>>([]);
+    const [ragError, setRagError] = useState('');
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // 刷新 RAG 知识库状态
+    const fetchRagStats = async () => {
+        try {
+            const resp = await fetch('http://localhost:5001/api/rag/stats');
+            const data = await resp.json();
+            if (data?.chunks !== undefined) setRagChunks(data.chunks);
+            if (data?.files) setRagFiles(data.files);
+            setRagError('');  // 刷新时清除错误
+        } catch { /* ignore */ }
+    };
+
+    // 进入 Agent 页时刷新状态
+    useEffect(() => {
+        if (activeTab === 'voice') fetchRagStats();
+    }, [activeTab]);
+
+    const uploadPdf = async (file: File) => {
+        setRagUploading(true);
+        setRagError('');
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const resp = await fetch('http://localhost:5001/api/rag/upload-pdf', {
+                method: 'POST',
+                body: formData,
+                signal: AbortSignal.timeout(120000)  // 首次下载模型可能较慢
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || '上传失败');
+            await fetchRagStats();  // 刷新文件列表
+            notify(`PDF 已导入，共 ${data.chunks} 个段落`);
+        } catch (err: any) {
+            const msg = err?.message || 'PDF 上传失败';
+            setRagError(msg);
+            notify(msg);
+        } finally {
+            setRagUploading(false);
+        }
+    };
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) uploadPdf(file);
+        if (e.target) e.target.value = '';
+    };
+
     const sendToAgent = async (userText: string) => {
         setVoiceDisplay((prev) => [...prev, { role: 'user', text: userText }]);
         const newHistory = [...voiceHistory, { role: 'user', content: userText }];
+        // 仅发往 API 时截断，前端保留完整历史供用户查看
+        const MAX_HISTORY = 100;
+        const trimmedHistory = newHistory.length > MAX_HISTORY ? newHistory.slice(-MAX_HISTORY) : newHistory;
         setVoiceHistory(newHistory);
         setVoiceStatus('processing');
 
         try {
+            // 尝试检索 RAG 上下文
+            let ragContext = '';
+            try {
+                const ragResp = await fetch('http://localhost:5001/api/rag/context', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: userText, top_k: 3, max_chars: 1200 }),
+                    signal: AbortSignal.timeout(5000)
+                });
+                const ragData = await ragResp.json();
+                if (ragData?.has_context) {
+                    ragContext = ragData.context;
+                }
+            } catch { /* RAG 检索失败不影响主流程 */ }
+
+            const systemMsg = ragContext
+                ? `${voiceSystemPrompt}\n\n【学习资料参考】\n${ragContext}\n\n在回答时尽量引用学习资料中的相关内容帮助用户理解。`
+                : voiceSystemPrompt;
+
             const resp = await fetch('http://localhost:5001/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    system: voiceSystemPrompt,
-                    messages: newHistory
+                    system: systemMsg,
+                    messages: trimmedHistory
                 }),
                 signal: AbortSignal.timeout(15000)
             });
@@ -641,6 +715,127 @@ function App() {
         setVoiceDisplay([]);
         setVoiceStatus('idle');
         setVoiceListening(false);
+        setRagTextInput('');
+    };
+
+    // Agent 模式切换: 'voice' | 'rag'
+    const [agentMode, setAgentMode] = useState<'voice' | 'rag'>('voice');
+    const [ragTextInput, setRagTextInput] = useState('');
+
+    // 各模式独立保存对话记录
+    const [voiceSession, setVoiceSession] = useState<{
+        history: Array<{ role: string; content: string }>;
+        display: Array<{ role: 'user' | 'ai'; text: string; sources?: {file: string; page: number}[] }>;
+    }>({ history: [], display: [] });
+    const [ragSession, setRagSession] = useState<{
+        history: Array<{ role: string; content: string }>;
+        display: Array<{ role: 'user' | 'ai'; text: string; sources?: {file: string; page: number}[] }>;
+    }>({ history: [], display: [] });
+
+    // 当前模式对应的对话记录
+    const voiceHistory = agentMode === 'voice' ? voiceSession.history : ragSession.history;
+    const voiceDisplay = agentMode === 'voice' ? voiceSession.display : ragSession.display;
+
+    const setVoiceHistory = useCallback((updater: Array<{ role: string; content: string }> | ((prev: Array<{ role: string; content: string }>) => Array<{ role: string; content: string }>)) => {
+        const setter = agentMode === 'voice' ? setVoiceSession : setRagSession;
+        setter((prev: any) => ({
+            ...prev,
+            history: typeof updater === 'function' ? updater(prev.history) : updater
+        }));
+    }, [agentMode]);
+
+    const setVoiceDisplay = useCallback((updater: Array<{ role: 'user' | 'ai'; text: string; sources?: {file: string; page: number}[] }> | ((prev: Array<{ role: 'user' | 'ai'; text: string; sources?: {file: string; page: number}[] }>) => Array<{ role: 'user' | 'ai'; text: string; sources?: {file: string; page: number}[] }>)) => {
+        const setter = agentMode === 'voice' ? setVoiceSession : setRagSession;
+        setter((prev: any) => ({
+            ...prev,
+            display: typeof updater === 'function' ? updater(prev.display) : updater
+        }));
+    }, [agentMode]);
+
+    const ragChatEndRef = useRef<HTMLDivElement>(null);
+
+    // 纯文字 RAG 聊天
+    const sendRagMessage = async () => {
+        const text = ragTextInput.trim();
+        if (!text) return;
+        setRagTextInput('');
+
+        setVoiceDisplay((prev) => [...prev, { role: 'user', text }]);
+        const newHistory = [...voiceHistory, { role: 'user', content: text }];
+        // 仅发往 API 时截断，前端保留完整历史供用户查看
+        const MAX_HISTORY = 100;
+        const trimmedHistory = newHistory.length > MAX_HISTORY ? newHistory.slice(-MAX_HISTORY) : newHistory;
+        setVoiceHistory(newHistory);
+        setVoiceStatus('processing');
+
+        try {
+            let ragContext = '';
+            let sources: {file: string; page: number}[] = [];
+            try {
+                const ragResp = await fetch('http://localhost:5001/api/rag/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: text, top_k: 3 }),
+                    signal: AbortSignal.timeout(5000)
+                });
+                const ragData = await ragResp.json();
+                if (ragData?.results?.length) {
+                    sources = ragData.results.map((r: any) => ({
+                        file: r.metadata?.source?.replace(/\.pdf$/i, '')?.split(/[/\\]/).pop() || '资料',
+                        page: r.metadata?.page || 0
+                    }));
+                    // 去重
+                    const seen = new Set();
+                    sources = sources.filter(s => {
+                        const key = `${s.file}-${s.page}`;
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                    });
+                    ragContext = ragData.results.map((r: any) =>
+                        `[来源: 第${r.metadata?.page || '?'}页] ${r.text}`
+                    ).join('\n\n');
+                }
+            } catch { /* ignore */ }
+
+            // RAG 模式用中文回答，专注知识问答
+            const ragPrompt = ragContext
+                ? `You are an English learning assistant. Answer based on the learning materials below.\n\n【Learning Materials】\n${ragContext}\n\nAnswer in English. If relevant, quote the source materials naturally and explain key vocabulary in simple English.`
+                : `You are an English learning assistant. Answer the user's questions about English learning in English. Current learning scenario: ${activeList?.context ?? 'General'}. Use simple English and explain difficult words.`;
+
+            const resp = await fetch('http://localhost:5001/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    system: ragPrompt,
+                    messages: trimmedHistory
+                }),
+                signal: AbortSignal.timeout(15000)
+            });
+            const data = await resp.json();
+            const reply = data?.text || '抱歉，我没有理解你的问题。';
+            setVoiceDisplay((prev) => [...prev, { role: 'ai', text: reply, sources }]);
+            setVoiceHistory((prev) => [...prev, { role: 'assistant', content: reply }]);
+            setVoiceStatus('idle');
+        } catch {
+            setVoiceDisplay((prev) => [...prev, { role: 'ai', text: '网络连接失败，请检查后端是否运行。' }]);
+            setVoiceStatus('idle');
+        }
+    };
+
+    const handleRagKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendRagMessage();
+        }
+    };
+
+    // 语音 / RAG 模式切换
+    const switchAgentMode = (mode: 'voice' | 'rag') => {
+        if (mode === agentMode) return;
+        if (mode === 'rag' && voiceListening) stopVoiceChat();
+        setAgentMode(mode);
+        setRagTextInput('');
     };
 
     const handleGenerateQuiz = async () => {
@@ -1645,51 +1840,156 @@ function App() {
                 {activeTab === 'voice' && (
                     <section className="practice-layout">
                         <section className="panel practice-panel">
+                            {/* 模式切换 */}
                             <div className="panel-head">
                                 <div>
-                                    <p className="eyebrow">语音对话</p>
-                                    <h2>和 AI 口语练习</h2>
+                                    <p className="eyebrow">AI Agent</p>
+                                    <h2>智能学习助手</h2>
                                 </div>
-                                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                    <span className={`voice-status-dot ${voiceStatus}`} />
-                                    <span className="muted-text">
-                                        {voiceStatus === 'idle' && '待机'}
-                                        {voiceStatus === 'listening' && '聆听中…'}
-                                        {voiceStatus === 'processing' && '思考中…'}
-                                        {voiceStatus === 'speaking' && '播报中…'}
-                                    </span>
+                                <div className="agent-mode-tabs">
+                                    <button
+                                        className={`agent-mode-btn ${agentMode === 'voice' ? 'active' : ''}`}
+                                        onClick={() => switchAgentMode('voice')}
+                                    >
+                                        🎤 语音对话
+                                    </button>
+                                    <button
+                                        className={`agent-mode-btn ${agentMode === 'rag' ? 'active' : ''}`}
+                                        onClick={() => switchAgentMode('rag')}
+                                    >
+                                        📄 PDF 问答
+                                    </button>
                                 </div>
                             </div>
 
-                            <div className="voice-messages">
-                                {voiceDisplay.length === 0 && (
-                                    <div className="empty-state">
-                                        <p><strong>场景：{activeList?.context ?? '自由对话'}</strong></p>
-                                        <p>点击「开始对话」进入角色扮演。AI 会扮演该场景中的角色，用英语与你互动。</p>
+                            {/* 语音模式 */}
+                            {agentMode === 'voice' && (
+                                <>
+                                    <div className="panel-head" style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 0 }}>
+                                        <div>
+                                            <p className="eyebrow">语音对话</p>
+                                            <h2>和 AI 口语练习</h2>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                            <span className={`voice-status-dot ${voiceStatus}`} />
+                                            <span className="muted-text">
+                                                {voiceStatus === 'idle' && '待机'}
+                                                {voiceStatus === 'listening' && '聆听中…'}
+                                                {voiceStatus === 'processing' && '思考中…'}
+                                                {voiceStatus === 'speaking' && '播报中…'}
+                                            </span>
+                                        </div>
                                     </div>
-                                )}
-                                {voiceDisplay.map((msg, i) => (
-                                    <div key={i} className={`voice-msg voice-msg-${msg.role}`}>
-                                        <strong>{msg.role === 'user' ? '你' : 'AI'}</strong>
-                                        <p>{msg.text}</p>
-                                    </div>
-                                ))}
-                            </div>
 
-                            <div className="voice-controls">
-                                {!voiceListening ? (
-                                    <button className="primary-button" type="button" onClick={startVoiceChat} style={{ fontSize: '1.1rem', padding: '14px 24px' }}>
-                                        🎤 开始对话
-                                    </button>
-                                ) : (
-                                    <button className="ghost-button danger" type="button" onClick={stopVoiceChat} style={{ fontSize: '1.1rem', padding: '14px 24px' }}>
-                                        ⏹ 结束对话
-                                    </button>
-                                )}
-                                {voiceDisplay.length > 0 && (
-                                    <button className="ghost-button" type="button" onClick={clearVoiceChat}>清空记录</button>
-                                )}
-                            </div>
+                                    <div className="voice-messages">
+                                        {voiceDisplay.length === 0 && (
+                                            <div className="empty-state">
+                                                <p><strong>场景：{activeList?.context ?? '自由对话'}</strong></p>
+                                                <p>点击「开始对话」进入角色扮演。AI 会扮演该场景中的角色，用英语与你互动。</p>
+                                            </div>
+                                        )}
+                                        {voiceDisplay.map((msg, i) => (
+                                            <div key={i} className={`voice-msg voice-msg-${msg.role}`}>
+                                                <strong>{msg.role === 'user' ? '你' : 'AI'}</strong>
+                                                <p dangerouslySetInnerHTML={{__html: renderMarkdown(msg.text)}} />
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="voice-controls">
+                                        {!voiceListening ? (
+                                            <button className="primary-button" type="button" onClick={startVoiceChat} style={{ fontSize: '1.1rem', padding: '14px 24px' }}>
+                                                🎤 开始对话
+                                            </button>
+                                        ) : (
+                                            <button className="ghost-button danger" type="button" onClick={stopVoiceChat} style={{ fontSize: '1.1rem', padding: '14px 24px' }}>
+                                                ⏹ 结束对话
+                                            </button>
+                                        )}
+                                        {voiceDisplay.length > 0 && (
+                                            <button className="ghost-button" type="button" onClick={clearVoiceChat}>清空记录</button>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+
+                            {/* RAG 文字问答模式 */}
+                            {agentMode === 'rag' && (
+                                <>
+                                    <div className="panel-head" style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 0 }}>
+                                        <div>
+                                            <p className="eyebrow">PDF 知识问答</p>
+                                            <h2>基于学习资料的问答</h2>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                            <span className={`voice-status-dot ${voiceStatus}`} />
+                                            <span className="muted-text">
+                                                {voiceStatus === 'idle' && '待机'}
+                                                {voiceStatus === 'processing' && '思考中…'}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="voice-messages">
+                                        {voiceDisplay.length === 0 && (
+                                            <div className="empty-state">
+                                                <p><strong>RAG 知识问答</strong></p>
+                                                <p>上传 PDF 学习资料后，可以针对资料内容提问。AI 会自动检索相关段落来回答。</p>
+                                                {ragChunks === 0 && (
+                                                    <p className="muted-text" style={{ marginTop: 8 }}>
+                                                        💡 提示：先在右侧上传一份 PDF 文档。
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
+                                        {voiceDisplay.map((msg, i) => (
+                                            <div key={i} className={`voice-msg voice-msg-${msg.role}`}>
+                                                <strong>{msg.role === 'user' ? '你' : 'AI'}</strong>
+                                                <p dangerouslySetInnerHTML={{__html: renderMarkdown(msg.text)}} />
+                                                {msg.sources && msg.sources.length > 0 && (
+                                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+                                                        {msg.sources.map((s, si) => (
+                                                            <span key={si} style={{
+                                                                fontSize: '0.7rem', padding: '2px 6px',
+                                                                borderRadius: 4, background: 'rgba(91,228,155,0.12)',
+                                                                color: 'var(--accent)'
+                                                            }}>
+                                                                📄 {s.file} p.{s.page}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                        <div ref={ragChatEndRef} />
+                                    </div>
+
+                                    <div className="voice-controls" style={{ flexDirection: 'column', gap: 8 }}>
+                                        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                                            <input
+                                                className="rag-text-input"
+                                                type="text"
+                                                placeholder="输入你的问题…"
+                                                value={ragTextInput}
+                                                onChange={(e) => setRagTextInput(e.target.value)}
+                                                onKeyDown={handleRagKeyDown}
+                                                disabled={voiceStatus === 'processing'}
+                                            />
+                                            <button
+                                                className="primary-button"
+                                                type="button"
+                                                onClick={sendRagMessage}
+                                                disabled={voiceStatus === 'processing' || !ragTextInput.trim()}
+                                            >
+                                                {voiceStatus === 'processing' ? '…' : '发送'}
+                                            </button>
+                                        </div>
+                                        {voiceDisplay.length > 0 && (
+                                            <button className="ghost-button" type="button" onClick={clearVoiceChat}>清空记录</button>
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         </section>
                         <aside className="panel practice-summary">
                             <p className="eyebrow">当前词表</p>
@@ -1702,9 +2002,72 @@ function App() {
                                 <span>场景</span>
                                 <strong>{activeList?.context ?? '-'}</strong>
                             </div>
-                            <p className="muted-text" style={{ marginTop: 16 }}>
-                                <strong>角色扮演</strong>：AI 扮演「{activeList?.context ?? '自由对话'}」场景角色，与你进行英语对话练习。多轮对话会自动记忆上下文。
-                            </p>
+
+                            {agentMode === 'rag' && (<>
+                            <hr className="divider" style={{ margin: '12px 0' }} />
+
+                            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".pdf"
+                                    style={{ display: 'none' }}
+                                    onChange={handleFileSelect}
+                                />
+                                <button
+                                    className="primary-button"
+                                    type="button"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={ragUploading}
+                                    style={{ flex: 1, padding: '8px 12px', fontSize: '0.85rem' }}
+                                >
+                                    {ragUploading ? '上传中…' : '📄 上传 PDF'}
+                                </button>
+                                {ragFiles.length > 0 && (
+                                    <button
+                                        className="ghost-button danger"
+                                        type="button"
+                                        onClick={async () => {
+                                            try {
+                                                await fetch('http://localhost:5001/api/rag/clear', { method: 'POST' });
+                                                await fetchRagStats();
+                                                notify('知识库已清空');
+                                            } catch { notify('清空失败'); }
+                                        }}
+                                        style={{ padding: '8px 10px', fontSize: '0.8rem' }}
+                                        title="清空知识库"
+                                    >
+                                        🗑
+                                    </button>
+                                )}
+                            </div>
+
+                            {ragError && (
+                                <p className="muted-text" style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginBottom: 6 }}>
+                                    {ragError}
+                                </p>
+                            )}
+
+                            {/* 已上传文件列表 */}
+                            {ragFiles.length > 0 && (
+                                <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                                    {ragFiles.slice().reverse().map((f, i) => (
+                                        <div key={i} style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: '6px 8px', marginBottom: 3,
+                                            background: 'var(--bg-soft)', borderRadius: 8, fontSize: '0.8rem'
+                                        }}>
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                                📄 {f.filename}
+                                            </span>
+                                            <span className="muted-text" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', marginLeft: 8 }}>
+                                                {f.chunks}段·{f.pages}页
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            </>)}
                         </aside>
                     </section>
                 )}

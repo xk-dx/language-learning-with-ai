@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from flask_cors import CORS
 from openai import OpenAI
 
+from rag.rag_engine import RagEngine
+
 load_dotenv(override=True)  # .env 优先于系统环境变量
 
 app = Flask(__name__)
@@ -23,6 +25,10 @@ client = OpenAI(
     api_key=OPENAI_API_KEY,
     base_url=OPENAI_BASE_URL
 )
+
+# RAG 引擎（初始化在 data/rag_store 目录）
+RAG_DATA_DIR = os.getenv('RAG_DATA_DIR', os.path.join(os.path.dirname(__file__), 'data', 'rag_store'))
+rag_engine = RagEngine(data_dir=RAG_DATA_DIR)
 
 
 @app.route('/api/config', methods=['GET'])
@@ -78,7 +84,7 @@ def chat():
     full_messages = []
     if system_prompt:
         full_messages.append({'role': 'system', 'content': system_prompt})
-    for msg in messages[-20:]:  # 最多保留 20 条历史
+    for msg in messages[-100:]:  # 最多保留 100 条历史（约 50 轮对话）
         if isinstance(msg, dict) and msg.get('role') and msg.get('content'):
             full_messages.append({'role': msg['role'], 'content': msg['content']})
 
@@ -348,6 +354,82 @@ NOTE: <why this word fits>
     except Exception as e:
         app.logger.exception('generate-quiz-extra failed')
         return jsonify({'questions': [], 'count': 0}), 200
+
+
+# ================================================================== #
+#  RAG 相关路由
+# ================================================================== #
+
+@app.route('/api/rag/upload-pdf', methods=['POST'])
+def rag_upload_pdf():
+    """上传 PDF 文件，切片并存入向量存储"""
+    if 'file' not in request.files:
+        return jsonify({'error': '缺少 file 字段'}), 400
+
+    file = request.files['file']
+    if not file or not file.filename:
+        return jsonify({'error': '文件为空'}), 400
+
+    if not file.filename.lower().endswith('.pdf'):
+        return jsonify({'error': '仅支持 PDF 文件'}), 400
+
+    try:
+        file_bytes = file.read()
+        result = rag_engine.ingest_pdf(file_bytes, filename=file.filename)
+        return jsonify(result)
+    except Exception as e:
+        app.logger.exception('rag upload-pdf failed')
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/api/rag/search', methods=['POST'])
+def rag_search():
+    """文本检索 — 在已导入的 PDF 资料中查找相关内容"""
+    data = request.get_json() or {}
+    query = data.get('query', '').strip()
+    top_k = int(data.get('top_k', 5))
+
+    if not query:
+        return jsonify({'error': 'query is required'}), 400
+
+    try:
+        results = rag_engine.search(query, top_k=top_k)
+        return jsonify({'results': results, 'count': len(results)})
+    except Exception as e:
+        app.logger.exception('rag search failed')
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/api/rag/context', methods=['POST'])
+def rag_context():
+    """检索并返回可直接拼入 prompt 的上下文字符串"""
+    data = request.get_json() or {}
+    query = data.get('query', '').strip()
+    top_k = int(data.get('top_k', 3))
+    max_chars = int(data.get('max_chars', 1500))
+
+    if not query:
+        return jsonify({'error': 'query is required'}), 400
+
+    try:
+        context = rag_engine.search_with_prompt(query, top_k=top_k, max_chars=max_chars)
+        return jsonify({'context': context, 'has_context': bool(context)})
+    except Exception as e:
+        app.logger.exception('rag context failed')
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/api/rag/stats', methods=['GET'])
+def rag_stats():
+    """查看 RAG 知识库状态"""
+    return jsonify(rag_engine.stats)
+
+
+@app.route('/api/rag/clear', methods=['POST'])
+def rag_clear():
+    """清空 RAG 知识库"""
+    rag_engine.clear()
+    return jsonify({'ok': True})
 
 
 if __name__ == '__main__':

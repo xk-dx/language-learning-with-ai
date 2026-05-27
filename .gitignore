@@ -19,3 +19,14 @@ yarn-error.log*
 *.sw?
 
 */audio-cache
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# RAG 向量存储数据
+backend_flask/data/rag_store/
