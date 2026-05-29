@@ -434,6 +434,37 @@ button {
     box-shadow: 0 0 0 3px rgba(91, 228, 155, 0.12);
 }
 
+/* 模态浮层 */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+}
+
+.modal-panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 20px 24px;
+    max-width: 540px;
+    width: 100%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+}
+
+.modal-panel .panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
 .primary-button,
 .ghost-button {
     border: none;

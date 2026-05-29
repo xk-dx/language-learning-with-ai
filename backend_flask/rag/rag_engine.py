@@ -125,3 +125,27 @@ class RagEngine:
         self.store.clear()
         self._files = []
         self._save_files()
+
+    # ------------------------------------------------------------------ #
+    # 词汇提取
+    # ------------------------------------------------------------------ #
+
+    def get_all_texts_for_extraction(self, max_chars: int = 8000) -> str:
+        """
+        从向量存储中取出所有文本，拼接成一段连续文本，
+        供 LLM 提取重要词汇。限制 max_chars 避免 token 超限。
+        """
+        texts = self.store.get_all_texts()
+        if not texts:
+            return ''
+
+        result = []
+        total = 0
+        for t in texts:
+            if total + len(t) > max_chars:
+                break
+            result.append(t)
+            total += len(t)
+        return '\n\n'.join(result)
+        self._files = []
+        self._save_files()

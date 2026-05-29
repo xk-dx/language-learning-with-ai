@@ -83,7 +83,7 @@ function deleteWordFromList(state: AppState, listId: string, wordId: string): Ap
     }));
 }
 
-function addWordToList(state: AppState, listId: string, term: string, meaning: string): AppState {
+function addWordToList(state: AppState, listId: string, term: string, meaning: string, example?: string, note?: string): AppState {
     const list = state.lists.find((item) => item.id === listId);
     if (!list) {
         return state;
@@ -94,8 +94,8 @@ function addWordToList(state: AppState, listId: string, term: string, meaning: s
         id: createId('word'),
         term,
         meaning: meaning.trim() || auto.meaning,
-        example: auto.example,
-        note: auto.note,
+        example: example?.trim() || auto.example,
+        note: note?.trim() || auto.note,
         score: meaning.trim() ? 20 : 12,
         mastered: false,
         createdAt: new Date().toISOString()
@@ -570,6 +570,8 @@ function App() {
     const [ragFiles, setRagFiles] = useState<Array<{ filename: string; chunks: number; pages: number; uploaded_at: string }>>([]);
     const [ragError, setRagError] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [extracting, setExtracting] = useState(false);
+    const [extractedWords, setExtractedWords] = useState<Array<{term: string; meaning: string; example: string; note: string}>>([]);
 
     // 刷新 RAG 知识库状态
     const fetchRagStats = async () => {
@@ -586,6 +588,42 @@ function App() {
     useEffect(() => {
         if (activeTab === 'voice') fetchRagStats();
     }, [activeTab]);
+
+    // 从 PDF 资料提取单词
+    const extractWordsFromRag = async () => {
+        if (extracting) return;
+        setExtracting(true);
+        setExtractedWords([]);
+        try {
+            const resp = await fetch('http://localhost:5001/api/rag/extract-words', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+                signal: AbortSignal.timeout(30000)
+            });
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                notify(data?.error || `请求失败 (${resp.status})`);
+                return;
+            }
+
+            if (data?.error) {
+                notify(data.error);
+                return;
+            }
+
+            if (data?.words?.length > 0) {
+                setExtractedWords(data.words);
+            } else {
+                notify('未提取到单词，请检查 PDF 内容');
+            }
+        } catch (err: any) {
+            notify(err?.message === 'The operation was aborted' ? '请求超时，请重试' : '提取失败，请重试');
+        } finally {
+            setExtracting(false);
+        }
+    };
 
     const uploadPdf = async (file: File) => {
         setRagUploading(true);
@@ -2067,9 +2105,102 @@ function App() {
                                         ))}
                                     </div>
                                 )}
+
+                                {ragChunks > 0 && (
+                                    <button
+                                        className="ghost-button"
+                                        type="button"
+                                        onClick={extractWordsFromRag}
+                                        disabled={extracting}
+                                        style={{ width: '100%', marginTop: 6, padding: '8px 12px', fontSize: '0.85rem' }}
+                                    >
+                                        {extracting ? '提取中…' : '📝 提取生词'}
+                                    </button>
+                                )}
                             </>)}
                         </aside>
                     </section>
+                )}
+
+                {/* 提取单词浮层 */}
+                {extractedWords.length > 0 && (
+                    <div className="modal-overlay" onClick={() => setExtractedWords([])}>
+                        <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+                            <div className="panel-head">
+                                <div>
+                                    <p className="eyebrow">词汇提取</p>
+                                    <h2>资料中的重点词汇</h2>
+                                </div>
+                                <button className="ghost-button" type="button" onClick={() => setExtractedWords([])}>✕</button>
+                            </div>
+                            <div style={{ maxHeight: 400, overflowY: 'auto', marginTop: 8 }}>
+                                {extractedWords.map((w, i) => {
+                                    const alreadyHas = activeList?.words.some((ow) => ow.term.toLowerCase() === w.term.toLowerCase());
+                                    return (
+                                        <div key={i} style={{
+                                            padding: '10px 12px', marginBottom: 6,
+                                            background: 'var(--bg-soft)', borderRadius: 10,
+                                            border: '1px solid var(--line)'
+                                        }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <strong style={{ fontSize: '1rem', color: 'var(--accent-alt)' }}>{w.term}</strong>
+                                                {!alreadyHas ? (
+                                                    <button
+                                                        className="primary-button"
+                                                        type="button"
+                                                        style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                                                        onClick={() => {
+                                                            const listId = activeList?.id;
+                                                            if (!listId) return notify('请先选择一个词表');
+                                                            setState((current) => addWordToList(current, listId, w.term, w.meaning, w.example, w.note));
+                                                            notify(`已加入「${activeList?.name}」`);
+                                                        }}
+                                                    >
+                                                        ➕ 加入词表
+                                                    </button>
+                                                ) : (
+                                                    <span className="muted-text" style={{ fontSize: '0.8rem' }}>✓ 已存在</span>
+                                                )}
+                                            </div>
+                                            <p className="muted-text" style={{ fontSize: '0.85rem', marginTop: 4 }}>{w.meaning}</p>
+                                            {w.example && (
+                                                <p className="muted-text" style={{ fontSize: '0.8rem', marginTop: 4, fontStyle: 'italic' }}>
+                                                    "{w.example}"
+                                                </p>
+                                            )}
+                                            {w.note && (
+                                                <p className="muted-text" style={{ fontSize: '0.8rem', marginTop: 2, opacity: 0.7 }}>💡 {w.note}</p>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                                <button
+                                    className="primary-button"
+                                    type="button"
+                                    style={{ flex: 1 }}
+                                    onClick={() => {
+                                        const listId = activeList?.id;
+                                        if (!listId) return notify('请先选择一个词表');
+                                        let added = 0;
+                                        extractedWords.forEach((w) => {
+                                            const alreadyHas = activeList?.words.some((ow) => ow.term.toLowerCase() === w.term.toLowerCase());
+                                            if (!alreadyHas) {
+                                                setState((current) => addWordToList(current, listId, w.term, w.meaning, w.example, w.note));
+                                                added++;
+                                            }
+                                        });
+                                        setExtractedWords([]);
+                                        notify(`已将 ${added} 个单词加入词表`);
+                                    }}
+                                >
+                                    ➕ 全部加入词表
+                                </button>
+                                <button className="ghost-button" type="button" onClick={() => setExtractedWords([])}>关闭</button>
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {activeTab === 'progress' && (

@@ -432,6 +432,64 @@ def rag_clear():
     return jsonify({'ok': True})
 
 
+@app.route('/api/rag/extract-words', methods=['POST'])
+def rag_extract_words():
+    """从已上传的 PDF 资料中提取重要英语词汇"""
+    if rag_engine.store.count == 0:
+        return jsonify({'error': 'RAG 知识库为空，请先上传 PDF'}), 400
+
+    if not OPENAI_API_KEY:
+        return jsonify({'error': 'server missing API key'}), 500
+
+    try:
+        text = rag_engine.get_all_texts_for_extraction(max_chars=8000)
+        if not text:
+            return jsonify({'error': '知识库中没有可提取的文本'}), 400
+
+        prompt = f'''Extract 10 important English vocabulary words from the following learning material.
+
+For each word, provide:
+- term: the word itself
+- meaning: 中文释义 (Chinese definition)
+- example: the original sentence from the material where this word appears (exact quote)
+- note: 记忆提示 (memory tip in Chinese)
+
+Output as a JSON object with a "words" array.
+
+Material:
+{text[:6000]}'''
+
+        import re
+        response = client.chat.completions.create(
+            model=DEFAULT_MODEL,
+            messages=[{'role': 'user', 'content': prompt}],
+            response_format={'type': 'json_object'},
+            max_tokens=2500,
+            temperature=0.3
+        )
+
+        raw = (response.choices[0].message.content or '').strip()
+        # 处理模型可能包裹的 markdown
+        if raw.startswith('```'):
+            raw = raw.split('\n', 1)[-1]
+            raw = raw.rsplit('```', 1)[0].strip()
+
+        parsed = json.loads(raw)
+        words = parsed.get('words', []) if isinstance(parsed, dict) else []
+        if isinstance(parsed, list):
+            words = parsed
+
+        if not words:
+            return jsonify({'error': 'AI 未能提取出有效单词，请检查 PDF 内容'}), 502
+
+        return jsonify({'words': words, 'count': len(words)})
+    except json.JSONDecodeError as e:
+        return jsonify({'error': 'AI 返回格式异常，请重试'}), 502
+    except Exception as e:
+        app.logger.exception('extract-words failed')
+        return jsonify({'error': str(e)}), 502
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))
     app.run(host='0.0.0.0', port=port, debug=(os.getenv('FLASK_ENV') == 'development'))
