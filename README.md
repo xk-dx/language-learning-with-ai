@@ -127,7 +127,7 @@ python app.py
 - **数据**: 前端 localStorage + 后端 JSON/NumPy 文件持久化
 - **AI 提供商**: 兼容 OpenAI / DeepSeek 等任何 OpenAI 兼容接口
 - **语音**: 浏览器 Web Speech API — `SpeechRecognition`（语音识别 STT）+ `speechSynthesis`（语音合成 TTS），纯浏览器端，零额外依赖，无需 API Key
-- **语音对话 Agent**: 多轮记忆（最近 20 轮）+ 动态角色提示词（根据词表场景自动生成）+ 全英文角色扮演
+- **语音对话 Agent**: 多轮记忆 + 动态角色提示词（根据词表场景自动生成）+ 全英文角色扮演
 
 ## License
 
