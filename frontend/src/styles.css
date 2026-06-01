@@ -1034,11 +1034,22 @@ button {
     border: 1px solid var(--line);
     line-height: 1.8;
     font-size: 1.05rem;
+    position: relative;
 }
 
 .reading-text {
     margin: 0;
     white-space: pre-wrap;
+    position: relative;
+}
+
+.reading-translation {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.7;
 }
 
 .reading-highlight {
@@ -1047,11 +1058,70 @@ button {
     border-bottom: 2px solid var(--accent-alt);
     cursor: help;
     transition: 0.15s;
+    position: relative;
 }
 
 .reading-highlight:hover {
     background: rgba(110, 224, 255, 0.1);
     border-radius: 4px;
+}
+
+/* 生词悬浮弹窗 — 精美卡片 */
+.word-tooltip {
+    position: absolute;
+    z-index: 200;
+    transform: translate(-50%, calc(-100% - 12px));
+    background: var(--panel);
+    border: 1px solid var(--accent-alt);
+    border-radius: 14px;
+    padding: 14px 16px;
+    min-width: 200px;
+    max-width: 320px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    pointer-events: none;
+    backdrop-filter: blur(8px);
+}
+
+.word-tooltip::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 8px solid transparent;
+    border-top-color: var(--accent-alt);
+}
+
+.word-tooltip-term {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--accent-alt);
+    letter-spacing: 0.02em;
+}
+
+.word-tooltip-meaning {
+    font-size: 0.92rem;
+    color: var(--text);
+    margin-top: 4px;
+    font-weight: 500;
+}
+
+.word-tooltip-example {
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin-top: 8px;
+    font-style: italic;
+    line-height: 1.5;
+    padding: 8px 10px;
+    background: rgba(110, 224, 255, 0.06);
+    border-radius: 8px;
+}
+
+.word-tooltip-note {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-top: 6px;
+    opacity: 0.8;
 }
 
 .reading-trans {

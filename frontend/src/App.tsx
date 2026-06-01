@@ -400,11 +400,33 @@ function App() {
     const [readingPassage, setReadingPassage] = useState('');
     const [readingLoading, setReadingLoading] = useState(false);
     const [showTranslation, setShowTranslation] = useState(false);
+    const [readingTranslation, setReadingTranslation] = useState('');
+
+    const fetchReadingTranslation = async (text: string) => {
+        try {
+            const resp = await fetch('http://localhost:5001/api/text-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    prompt: `Translate the following English passage into Chinese (中文). Return ONLY the Chinese translation, no extra text:\n\n${text.slice(0, 2000)}`,
+                    max_tokens: 1000,
+                    temperature: 0.3
+                }),
+                signal: AbortSignal.timeout(15000)
+            });
+            const data = await resp.json();
+            const trans = data?.provider_response?.choices?.[0]?.message?.content?.trim() || '';
+            setReadingTranslation(trans);
+        } catch {
+            setReadingTranslation('');
+        }
+    };
 
     const handleGenerateReading = async () => {
         if (!activeList || !activeList.words.length) return notify('当前词表还没有单词。');
         setReadingLoading(true);
         setReadingPassage('');
+        setReadingTranslation('');
         notify('正在生成短文…');
 
         const terms = activeList.words.map((w) => w.term);
@@ -1223,10 +1245,24 @@ function App() {
         }
 
         return (
-            <p className="reading-text">
+            <div className="reading-text">
                 {parts.map((part, i) =>
                     part.matched ? (
-                        <span key={i} className="reading-highlight" title={showTrans && part.wordInfo ? part.wordInfo.meaning : ''}>
+                        <span key={i} className="reading-highlight"
+                            onMouseEnter={(e) => {
+                                if (part.wordInfo) {
+                                    const rect = (e.target as HTMLElement).getBoundingClientRect();
+                                    const passage = (e.target as HTMLElement).closest('.reading-passage');
+                                    const passageRect = passage?.getBoundingClientRect();
+                                    setWordTooltip({
+                                        word: part.wordInfo,
+                                        x: rect.left - (passageRect?.left || 0) + rect.width / 2,
+                                        y: rect.top - (passageRect?.top || 0)
+                                    });
+                                }
+                            }}
+                            onMouseLeave={() => setWordTooltip(null)}
+                        >
                             {part.text}
                             {showTrans && part.wordInfo && (
                                 <span className="reading-trans"> ({part.wordInfo.meaning})</span>
@@ -1236,7 +1272,25 @@ function App() {
                         <span key={i}>{part.text}</span>
                     )
                 )}
-            </p>
+                {/* 悬浮弹窗 */}
+                {wordTooltip && (
+                    <div ref={wordTooltipRef} className="word-tooltip"
+                        style={{
+                            left: wordTooltip.x,
+                            top: wordTooltip.y
+                        }}
+                    >
+                        <div className="word-tooltip-term">{wordTooltip.word.term}</div>
+                        <div className="word-tooltip-meaning">{wordTooltip.word.meaning}</div>
+                        {wordTooltip.word.example && (
+                            <div className="word-tooltip-example">"{wordTooltip.word.example}"</div>
+                        )}
+                        {wordTooltip.word.note && (
+                            <div className="word-tooltip-note">💡 {wordTooltip.word.note}</div>
+                        )}
+                    </div>
+                )}
+            </div>
         );
     };
 
@@ -1377,6 +1431,13 @@ function App() {
     const learnScore = learnSession.questions.length ? Math.round((learnSession.correctCount / learnSession.questions.length) * 100) : 0;
     const overviewWords = shuffle(state.lists.flatMap((list) => list.words)).slice(0, 8);
     const activityStats = useMemo(() => getActivityStats(), []);
+
+    // 阅读生词悬浮弹窗
+    const [wordTooltip, setWordTooltip] = useState<{
+        word: WordItem;
+        x: number; y: number;
+    } | null>(null);
+    const wordTooltipRef = useRef<HTMLDivElement>(null);
 
     return (
         <div className="app-shell">
@@ -1719,8 +1780,13 @@ function App() {
                                 <div className="reading-section">
                                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
                                         <label className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.9rem' }}>
-                                            <input type="checkbox" checked={showTranslation} onChange={(e) => setShowTranslation(e.target.checked)} />
-                                            显示翻译
+                                            <input type="checkbox" checked={showTranslation} onChange={(e) => {
+                                                const checked = e.target.checked;
+                                                setShowTranslation(checked);
+                                                if (checked && readingPassage && !readingTranslation) fetchReadingTranslation(readingPassage);
+                                                if (!checked) setReadingTranslation('');
+                                            }} />
+                                            全文翻译
                                         </label>
                                         <button className="primary-button" type="button" onClick={handleGenerateReading} disabled={readingLoading}>
                                             {readingLoading ? '生成中…' : '生成短文'}
@@ -1731,7 +1797,23 @@ function App() {
                                         <div className="empty-state">当前词表还没有单词，先添加几个词再生成阅读短文。</div>
                                     ) : readingPassage ? (
                                         <div className="reading-passage">
-                                            {renderHighlightedPassage(readingPassage, activeList?.words ?? [], showTranslation)}
+                                            <div className="reading-text">
+                                                {readingPassage.split('\n').map((line, i, arr) => (
+                                                    <span key={i}>
+                                                        {renderHighlightedPassage(line, activeList?.words ?? [], false)}
+                                                        {i < arr.length - 1 && <br />}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            {showTranslation && readingTranslation && (
+                                                <div className="reading-translation">
+                                                    <p className="eyebrow" style={{ marginBottom: 8 }}>中文翻译</p>
+                                                    <p>{readingTranslation}</p>
+                                                </div>
+                                            )}
+                                            {showTranslation && !readingTranslation && !readingLoading && (
+                                                <p className="muted-text" style={{ fontSize: '0.85rem', marginTop: 8 }}>正在获取翻译…</p>
+                                            )}
                                         </div>
                                     ) : (
                                         <div className="empty-state">点击「生成短文」，AI 会根据当前词表中的单词创作一段短文。</div>
