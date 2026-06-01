@@ -253,6 +253,16 @@ function App() {
         }, 2800);
     };
 
+    // 自定义确认对话框
+    const [confirmState, setConfirmState] = useState<{
+        message: string;
+        onConfirm: (() => void) | null;
+    }>({ message: '', onConfirm: null });
+
+    const confirmAction = (message: string, onConfirm: () => void) => {
+        setConfirmState({ message, onConfirm });
+    };
+
     const handleCreateList = () => {
         const trimmedName = listName.trim();
         const trimmedContext = listContext.trim();
@@ -921,12 +931,10 @@ function App() {
             return;
         }
 
-        if (!window.confirm(`确定删除词表「${list.name}」吗？`)) {
-            return;
-        }
-
-        setState((current) => removeList(current, listId));
-        notify('词表已删除。');
+        confirmAction(`确定删除词表「${list.name}」吗？此操作不可撤销。`, () => {
+            setState((current) => removeList(current, listId));
+            notify('词表已删除。');
+        });
     };
 
     const handleDeleteWord = (wordId: string) => {
@@ -939,12 +947,10 @@ function App() {
             return;
         }
 
-        if (!window.confirm(`确定删除单词「${word.term}」吗？`)) {
-            return;
-        }
-
-        setState((current) => deleteWordFromList(current, activeList.id, wordId));
-        notify('单词已删除。');
+        confirmAction(`确定删除单词「${word.term}」吗？`, () => {
+            setState((current) => deleteWordFromList(current, activeList.id, wordId));
+            notify('单词已删除。');
+        });
     };
 
     const handleLearnAnswer = (answer: string) => {
@@ -1035,16 +1041,14 @@ function App() {
     };
 
     const handleSeedReset = () => {
-        if (!window.confirm('确定清空本地数据并恢复示例词表吗？')) {
-            return;
-        }
-
-        setState(initialState);
-        setSelectedWordId(initialState.lists[0]?.words[0]?.id ?? '');
-        setActiveTab('overview');
-        setLearnRound((value) => value + 1);
-        setQuizRound((value) => value + 1);
-        notify('已恢复示例数据。');
+        confirmAction('确定清空本地数据并恢复示例词表吗？所有自定义数据将丢失。', () => {
+            setState(initialState);
+            setSelectedWordId(initialState.lists[0]?.words[0]?.id ?? '');
+            setActiveTab('overview');
+            setLearnRound((value) => value + 1);
+            setQuizRound((value) => value + 1);
+            notify('已恢复示例数据。');
+        });
     };
 
     const renderWordCard = (word: WordItem) => {
@@ -1272,7 +1276,13 @@ function App() {
             <main className="app-frame">
                 <div className="panel top-bar">
                     <div className="top-bar-left">
-                        <span className="brand-mark">WordPecker</span>
+                        <span className="brand-mark">WordForge</span>
+                        {activeList && (
+                            <span className="current-list-badge">
+                                <span className={`clr-dot clr-${activeList.color}`} />
+                                {activeList.name}
+                            </span>
+                        )}
                     </div>
                     <div className="top-bar-right">
                         <button className="ghost-button" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))} style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
@@ -2120,6 +2130,36 @@ function App() {
                             </>)}
                         </aside>
                     </section>
+                )}
+
+                {/* 确认对话框 */}
+                {confirmState.onConfirm && (
+                    <div className="modal-overlay" onClick={() => setConfirmState({ message: '', onConfirm: null })}>
+                        <div className="modal-panel" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
+                            <p style={{ fontSize: '1rem', lineHeight: 1.6, margin: '0 0 20px' }}>{confirmState.message}</p>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button
+                                    className="primary-button"
+                                    type="button"
+                                    style={{ flex: 1 }}
+                                    onClick={() => {
+                                        confirmState.onConfirm?.();
+                                        setConfirmState({ message: '', onConfirm: null });
+                                    }}
+                                >
+                                    确认
+                                </button>
+                                <button
+                                    className="ghost-button"
+                                    type="button"
+                                    style={{ flex: 1 }}
+                                    onClick={() => setConfirmState({ message: '', onConfirm: null })}
+                                >
+                                    取消
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {/* 提取单词浮层 */}

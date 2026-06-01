@@ -1,4 +1,4 @@
-# WordPecker 最小化版本 MVP
+# WordForge 最小化版本 MVP
 
 ## 目标
 

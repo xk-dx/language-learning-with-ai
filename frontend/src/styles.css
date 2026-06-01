@@ -166,6 +166,43 @@ button {
     border-top: 1px solid var(--line);
 }
 
+/* 顶栏当前词表 */
+.current-list-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px 3px 8px;
+    border-radius: 8px;
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--muted);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: 0.2s ease;
+}
+
+.current-list-badge:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+/* 词表颜色小圆点 */
+.clr-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.clr-sun   { background: var(--sun); }
+.clr-mint  { background: var(--mint); }
+.clr-violet{ background: var(--violet); }
+.clr-sky   { background: var(--sky); }
+.clr-amber { background: var(--amber); }
+
 .muted-text,
 .list-card p,
 .overview-word-card p,
@@ -854,6 +891,75 @@ button {
 .light-mode .voice-msg-ai {
     background: rgba(14, 165, 255, 0.04);
     border-color: rgba(14, 165, 255, 0.15);
+}
+
+/* Light mode — 卡片 / 状态 / 面板补全 */
+.light-mode .word-card-selected {
+    background: rgba(20, 179, 123, 0.07);
+    border-color: rgba(20, 179, 123, 0.2);
+}
+
+.light-mode .mastery-badge {
+    background: rgba(7, 18, 36, 0.03);
+    border-color: rgba(7, 18, 36, 0.08);
+}
+
+.light-mode .mastery-badge.is-mastered {
+    background: rgba(20, 179, 123, 0.08);
+    border-color: rgba(20, 179, 123, 0.2);
+}
+
+.light-mode .progress-track {
+    background: rgba(7, 18, 36, 0.06);
+}
+
+.light-mode .detail-example {
+    background: rgba(7, 18, 36, 0.02);
+    border-color: rgba(7, 18, 36, 0.08);
+}
+
+.light-mode .reading-passage {
+    background: rgba(7, 18, 36, 0.02);
+}
+
+.light-mode .reading-highlight {
+    color: #0e7ad9;
+    border-bottom-color: #0e7ad9;
+}
+
+.light-mode .reading-highlight:hover {
+    background: rgba(14, 122, 217, 0.06);
+}
+
+.light-mode .option-card {
+    background: rgba(7, 18, 36, 0.02);
+    border-color: rgba(7, 18, 36, 0.08);
+}
+
+.light-mode .summary-card,
+.light-mode .empty-state {
+    color: var(--muted);
+}
+
+.light-mode .modal-overlay {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.light-mode .modal-panel {
+    border-color: rgba(7, 18, 36, 0.1);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.12);
+}
+
+.light-mode .reading-text {
+    color: var(--text);
+}
+
+.light-mode .voice-msg code {
+    background: rgba(7, 18, 36, 0.06);
+}
+
+.light-mode .voice-msg pre {
+    background: rgba(7, 18, 36, 0.04);
 }
 
 /* ── Difficulty pill selector ── */

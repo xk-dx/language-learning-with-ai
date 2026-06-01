@@ -1,6 +1,6 @@
-# ai智能英语学习平台
+# ai智能英语学习平台 - WordForge
 
-基于原 wordpecker-app 概念简化复刻，前端 React + 后端 Flask，专注词汇学习的核心闭环。
+基于原概念简化复刻，前端 React + 后端 Flask，专注词汇学习的核心闭环。
 
 ## 功能
 
@@ -36,7 +36,7 @@ Agent 页面提供两种交互模式，可在顶部一键切换：
 ## 项目结构
 
 ```
-my_wordpecker/
+my_wordpecker/          # 项目目录名保持不变
 ├── frontend/           # React + Vite + TypeScript
 │   ├── src/
 │   │   ├── App.tsx         # 主应用（路由、状态、渲染）

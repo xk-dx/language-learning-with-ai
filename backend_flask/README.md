@@ -1,4 +1,4 @@
-# my_wordpecker Flask AI proxy
+# WordForge Flask AI proxy
 
 This small Flask service exposes a minimal OpenAI-compatible text proxy and a connectivity test endpoint.
 
