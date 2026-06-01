@@ -169,18 +169,19 @@ def complete_word():
     if not OPENAI_API_KEY:
         return jsonify({'error': 'server missing API key'}), 500
 
-    prompt = f"""你是一个英语词汇助手。请为单词 "{term}" 提供以下信息（场景：{context or '通用'})。
+    prompt = f"""You are an English vocabulary assistant. Provide info for the word "{term}" (context: {context or 'General'}).
 
-返回纯 JSON，不要 Markdown 包裹：
-{{"meaning": "中文释义", "example": "包含该词的英语例句", "note": "简短记忆提示"}}
+Return a JSON object:
+{{"meaning": "中文释义", "example": "English example sentence using this word", "note": "中文记忆提示"}}
 """
 
     try:
         response = client.chat.completions.create(
             model=DEFAULT_MODEL,
             messages=[{'role': 'user', 'content': prompt}],
+            response_format={'type': 'json_object'},
             max_tokens=300,
-            temperature=0.5
+            temperature=0.3
         )
 
         raw = response.choices[0].message.content or ''
@@ -188,6 +189,8 @@ def complete_word():
         if cleaned.startswith('```'):
             cleaned = cleaned.split('\n', 1)[-1]
             cleaned = cleaned.rsplit('```', 1)[0].strip()
+        if not cleaned:
+            raise ValueError('empty AI response')
         result = json.loads(cleaned)
 
         return jsonify({
@@ -197,7 +200,7 @@ def complete_word():
         })
     except Exception as e:
         app.logger.exception('complete-word failed')
-        return jsonify({'error': str(e)}), 502
+        return jsonify({'meaning': term, 'example': '', 'note': ''})
 
 
 @app.route('/api/generate-reading', methods=['POST'])

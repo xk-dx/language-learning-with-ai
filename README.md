@@ -14,11 +14,11 @@
 | 📊 进度         | 整体进度条、最薄弱单词排行、已掌握单词排行、按分数排序的词表明细                 |
 | 🤖 智能发现     | AI 根据场景生成真实英语词汇候选，可逐个或批量加入词表                            |
 | 🖼️ 单词配图     | 在单词详情页搜索 Pexels 免费图库配图（需配置 API Key）                           |
-| 🤖 Agent        | 双模式 AI 助手：🎤 语音角色扮演 + 📄 PDF 知识问答（RAG）+ 📝 智能提取生词           |
+| 🤖 Agent        | 三模式 AI 助手：🎤 语音角色扮演 + 📄 PDF 知识问答（RAG）+ 📷 识图学词 + 📝 智能提取生词 |
 
 ## Agent 智能助手
 
-Agent 页面提供两种交互模式，可在顶部一键切换：
+Agent 页面提供三种交互模式，可在顶部一键切换：
 
 ### 🎤 语音对话模式
 - 根据词表场景自动生成 AI 角色提示词
@@ -32,6 +32,12 @@ Agent 页面提供两种交互模式，可在顶部一键切换：
 - 提问时自动检索相关段落，AI 结合资料回答
 - 支持多份 PDF 同时检索，保留上传历史
 - **📝 智能提取生词**：一键从 PDF 中提取重点词汇（中文释义 + 原文例句），可逐个或批量加入词表
+
+### 📷 识图学词模式
+- 上传图片，浏览器内 COCO-SSD（TensorFlow.js）实时物体检测
+- **纯本地运行**，图片不上传服务器，无隐私风险
+- 鼠标悬停自动高亮物体轮廓 + 弹出英文名称
+- 点击「加入词表」自动补充中文释义，快速扩充词库
 
 ## 项目结构
 
@@ -124,7 +130,8 @@ python app.py
 
 - **前端**: React 18 + Vite + TypeScript
 - **后端**: Flask + OpenAI SDK + Pexels API
-- **RAG**: 本地 `sentence-transformers`（`all-MiniLM-L6-v2`）+ NumPy 向量检索 + PyMuPDF 解析
+- **RAG**: 本地 `sentence-transformers` + NumPy 向量检索 + PyMuPDF PDF 解析
+- **物体检测**: COCO-SSD (TensorFlow.js)，浏览器端本地运行，无需后端
 - **数据**: 前端 localStorage + 后端 JSON/NumPy 文件持久化
 - **AI 提供商**: 兼容 OpenAI / DeepSeek 等任何 OpenAI 兼容接口
 - **语音**: 浏览器 Web Speech API — `SpeechRecognition`（语音识别 STT）+ `speechSynthesis`（语音合成 TTS），纯浏览器端，零额外依赖，无需 API Key

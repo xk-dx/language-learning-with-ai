@@ -635,6 +635,116 @@ function App() {
         }
     };
 
+    // Vision 识图学词
+    const [visionImage, setVisionImage] = useState<string | null>(null);
+    const [visionDetections, setVisionDetections] = useState<Array<{
+        bbox: [number, number, number, number];  // [x, y, w, h]
+        class: string;
+        score: number;
+    }>>([]);
+    const [visionHovered, setVisionHovered] = useState<{ class: string; bbox: [number, number, number, number]; chinese?: string } | null>(null);
+    const visionCanvasRef = useRef<HTMLCanvasElement>(null);
+    const visionImgRef = useRef<HTMLImageElement>(null);
+    const [visionLoading, setVisionLoading] = useState(false);
+    const [visionModel, setVisionModel] = useState<any>(null);
+
+    // 加载 COCO-SSD 模型
+    useEffect(() => {
+        if (typeof (window as any).cocoSsd !== 'undefined' && !visionModel) {
+            (window as any).cocoSsd.load().then((model: any) => {
+                setVisionModel(model);
+            });
+        }
+    }, []);
+
+    // 上传图片并检测
+    const uploadVisionImage = (file: File) => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const dataUrl = e.target?.result as string;
+            setVisionImage(dataUrl);
+            setVisionDetections([]);
+            setVisionHovered(null);
+            setVisionLoading(true);
+            // 等图片渲染后再检测
+            setTimeout(async () => {
+                if (visionModel && visionImgRef.current) {
+                    try {
+                        const predictions = await visionModel.detect(visionImgRef.current);
+                        setVisionDetections(predictions);
+                    } catch (err) {
+                        notify('物体检测失败');
+                    }
+                }
+                setVisionLoading(false);
+            }, 300);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleVisionFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) uploadVisionImage(file);
+        if (e.target) e.target.value = '';
+    };
+
+    // 鼠标在图片上移动 → 检测悬停物体
+    const handleVisionMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+        const img = visionImgRef.current;
+        if (!img || !visionDetections.length) return;
+
+        const rect = img.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const scaleX = img.naturalWidth / rect.width;
+        const scaleY = img.naturalHeight / rect.height;
+
+        let found: typeof visionHovered = null;
+        for (const d of visionDetections) {
+            const [x, y, w, h] = d.bbox;
+            if (mx * scaleX >= x && mx * scaleX <= x + w &&
+                my * scaleY >= y && my * scaleY <= y + h) {
+                found = { class: d.class, bbox: d.bbox };
+                break;
+            }
+        }
+        setVisionHovered(found);
+    };
+
+    // 绘制轮廓
+    useEffect(() => {
+        const canvas = visionCanvasRef.current;
+        const img = visionImgRef.current;
+        if (!canvas || !img || !visionDetections.length) return;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+
+        // 清除旧绘制
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 绘制所有检测框（淡色）
+        for (const d of visionDetections) {
+            const [x, y, w, h] = d.bbox;
+            ctx.strokeStyle = 'rgba(91, 228, 155, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, w, h);
+        }
+
+        // 绘制悬停物体的高亮框
+        if (visionHovered) {
+            const [x, y, w, h] = visionHovered.bbox;
+            ctx.strokeStyle = '#5be49b';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(x, y, w, h);
+            ctx.fillStyle = 'rgba(91, 228, 155, 0.1)';
+            ctx.fillRect(x, y, w, h);
+        }
+    }, [visionDetections, visionHovered]);
+
     const uploadPdf = async (file: File) => {
         setRagUploading(true);
         setRagError('');
@@ -767,7 +877,7 @@ function App() {
     };
 
     // Agent 模式切换: 'voice' | 'rag'
-    const [agentMode, setAgentMode] = useState<'voice' | 'rag'>('voice');
+    const [agentMode, setAgentMode] = useState<'voice' | 'rag' | 'vision'>('voice');
     const [ragTextInput, setRagTextInput] = useState('');
 
     // 各模式独立保存对话记录
@@ -879,7 +989,7 @@ function App() {
     };
 
     // 语音 / RAG 模式切换
-    const switchAgentMode = (mode: 'voice' | 'rag') => {
+    const switchAgentMode = (mode: 'voice' | 'rag' | 'vision') => {
         if (mode === agentMode) return;
         if (mode === 'rag' && voiceListening) stopVoiceChat();
         setAgentMode(mode);
@@ -1907,6 +2017,12 @@ function App() {
                                     >
                                         📄 PDF 问答
                                     </button>
+                                    <button
+                                        className={`agent-mode-btn ${agentMode === 'vision' ? 'active' : ''}`}
+                                        onClick={() => switchAgentMode('vision')}
+                                    >
+                                        📷 识图学词
+                                    </button>
                                 </div>
                             </div>
 
@@ -2036,6 +2152,65 @@ function App() {
                                             <button className="ghost-button" type="button" onClick={clearVoiceChat}>清空记录</button>
                                         )}
                                     </div>
+                                </>
+                            )}
+
+                            {/* 📷 识图学词模式 */}
+                            {agentMode === 'vision' && (
+                                <>
+                                    <div className="panel-head" style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 0 }}>
+                                        <div>
+                                            <p className="eyebrow">识图学词</p>
+                                            <h2>从图片发现新单词</h2>
+                                        </div>
+                                        {visionLoading && <span className="muted-text">检测中…</span>}
+                                    </div>
+
+                                    {!visionImage ? (
+                                        <div className="empty-state" style={{ minHeight: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12 }}>
+                                            <p>上传一张图片，AI 会自动识别其中的物品</p>
+                                            <p className="muted-text">鼠标悬停在物品上可查看英文名称</p>
+                                            <input type="file" accept="image/*" style={{ display: 'none' }} id="vision-file-input" onChange={handleVisionFileSelect} />
+                                            <button className="primary-button" type="button" onClick={() => document.getElementById('vision-file-input')?.click()} style={{ alignSelf: 'center', padding: '14px 28px' }}>
+                                                📷 上传图片
+                                            </button>
+                                            {!visionModel && <p className="muted-text" style={{ fontSize: '0.85rem' }}>正在加载 AI 模型…首次加载可能需要几秒</p>}
+                                        </div>
+                                    ) : (
+                                        <div style={{ position: 'relative', display: 'inline-block', width: '100%' }} onMouseMove={handleVisionMouseMove} onMouseLeave={() => setVisionHovered(null)}>
+                                            <img ref={visionImgRef} src={visionImage} alt="识别对象" style={{ width: '100%', borderRadius: 12, display: 'block' }} />
+                                            <canvas ref={visionCanvasRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
+                                            {visionHovered && (
+                                                <div style={{
+                                                    position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)',
+                                                    background: 'var(--panel)', border: '1px solid var(--panel-border)',
+                                                    borderRadius: 12, padding: '10px 16px', boxShadow: '0 8px 30px rgba(0,0,0,0.3)',
+                                                    display: 'flex', alignItems: 'center', gap: 10, zIndex: 10, whiteSpace: 'nowrap'
+                                                }}>
+                                                    <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>{visionHovered.class}</span>
+                                                    <button className="primary-button" type="button" style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                                                        onClick={() => {
+                                                            const listId = activeList?.id;
+                                                            if (!listId) return notify('请先选择一个词表');
+                                                            fetch('http://localhost:5001/api/complete-word', {
+                                                                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ term: visionHovered.class, context: activeList?.context || '通用' }),
+                                                                signal: AbortSignal.timeout(6000)
+                                                            }).then(r => r.json()).then(data => {
+                                                                setState((current) => addWordToList(current, listId, visionHovered.class, data.meaning || visionHovered.class, data.example || '', data.note || ''));
+                                                                notify(`已加入「${activeList?.name}」`);
+                                                            }).catch(() => {
+                                                                setState((current) => addWordToList(current, listId, visionHovered.class, ''));
+                                                                notify(`已加入「${activeList?.name}」`);
+                                                            });
+                                                        }}
+                                                    >➕ 加入词表</button>
+                                                </div>
+                                            )}
+                                            <button className="ghost-button" type="button" onClick={() => { setVisionImage(null); setVisionDetections([]); setVisionHovered(null); }}
+                                                style={{ position: 'absolute', top: 8, right: 8, padding: '4px 8px', fontSize: '0.8rem', background: 'rgba(0,0,0,0.5)' }}>✕ 换图</button>
+                                        </div>
+                                    )}
                                 </>
                             )}
                         </section>
