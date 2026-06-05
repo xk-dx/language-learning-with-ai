@@ -21,13 +21,14 @@ import { fetchGeneratedWords, fetchWordCompletion, fetchReading, fetchImage, fet
 
 const STORAGE_KEY = 'wordpecker-mini-state-v1';
 const THEME_KEY = 'wordpecker-theme-v1';
-const TABS: Array<{ id: TabId; label: string }> = [
-    { id: 'overview', label: '总览' },
-    { id: 'lists', label: '词表' },
-    { id: 'learn', label: '学习' },
-    { id: 'quiz', label: '测验' },
-    { id: 'voice', label: 'Agent' },
-    { id: 'progress', label: '进度' }
+const ONBOARDING_KEY = 'wordforge-onboarding-v1';
+const SETTINGS_KEY = 'wordforge-user-settings-v1';
+const NAV_ITEMS: Array<{ id: TabId; label: string; hint: string }> = [
+    { id: 'overview', label: '仪表盘', hint: 'Dashboard' },
+    { id: 'lists', label: '我的词库', hint: 'Vocab' },
+    { id: 'learn', label: '沉浸学习', hint: 'Study' },
+    { id: 'progress', label: '学习报告', hint: 'Progress' },
+    { id: 'settings', label: '系统设置', hint: 'Settings' }
 ];
 
 const difficultyPills = ['入门', '日常', '进阶'];
@@ -52,6 +53,43 @@ function loadState(): AppState {
 
 function saveState(state: AppState) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+type SettingsSection = 'model' | 'image' | 'preference' | 'data' | 'about';
+
+interface UserSettings {
+    apiKey: string;
+    baseUrl: string;
+    defaultModel: string;
+    pexelsKey: string;
+    defaultListId: string;
+    defaultPractice: 'flashcard' | 'reading' | 'quiz' | 'voice';
+    speechEnabled: boolean;
+    speechLang: string;
+}
+
+const defaultUserSettings: UserSettings = {
+    apiKey: '',
+    baseUrl: 'https://api.deepseek.com',
+    defaultModel: 'deepseek-v4-flash',
+    pexelsKey: '',
+    defaultListId: '',
+    defaultPractice: 'flashcard',
+    speechEnabled: true,
+    speechLang: 'zh-CN'
+};
+
+function loadUserSettings(): UserSettings {
+    try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (!raw) {
+            return defaultUserSettings;
+        }
+
+        return { ...defaultUserSettings, ...JSON.parse(raw) };
+    } catch {
+        return defaultUserSettings;
+    }
 }
 
 function nextColor(index: number): string {
@@ -165,6 +203,12 @@ function App() {
     const [flashcardFlipped, setFlashcardFlipped] = useState(false);
     const [flashcardKnown, setFlashcardKnown] = useState(0);
     const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'));
+    const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem(ONBOARDING_KEY) !== 'done');
+    const [onboardingStep, setOnboardingStep] = useState<0 | 1>(0);
+    const [settingsSection, setSettingsSection] = useState<SettingsSection>('model');
+    const [userSettings, setUserSettings] = useState<UserSettings>(() => loadUserSettings());
+    const [configStatus, setConfigStatus] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle');
+    const [configMessage, setConfigMessage] = useState('尚未测试连接。');
     const messageTimer = useRef<number | null>(null);
 
     const activeList = useMemo(() => getActiveList(state), [state]);
@@ -188,6 +232,14 @@ function App() {
             // ignore write errors
         }
     }, [theme]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(userSettings));
+        } catch {
+            // ignore write errors
+        }
+    }, [userSettings]);
 
     useEffect(() => {
         try {
@@ -1172,6 +1224,42 @@ function App() {
         setQuizShowExplanationIndex(null);
     };
 
+    const updateUserSetting = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
+        setUserSettings((current) => ({ ...current, [key]: value }));
+    };
+
+    const finishOnboarding = (goToSettings = false) => {
+        localStorage.setItem(ONBOARDING_KEY, 'done');
+        setShowOnboarding(false);
+        setOnboardingStep(0);
+        if (goToSettings) {
+            setActiveTab('settings');
+            setSettingsSection('model');
+        }
+    };
+
+    const handleTestConnection = async () => {
+        setConfigStatus('checking');
+        setConfigMessage('正在连接后端配置接口...');
+
+        try {
+            const resp = await fetch('http://localhost:5001/api/config', {
+                signal: AbortSignal.timeout(6000)
+            });
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                throw new Error(data?.error || `连接失败 (${resp.status})`);
+            }
+
+            setConfigStatus('ok');
+            setConfigMessage(`后端在线：${data.default_model ?? '未知模型'} · ${data.openai_base_url ?? '未知地址'}`);
+        } catch (err: any) {
+            setConfigStatus('error');
+            setConfigMessage(err?.message === 'The operation was aborted' ? '连接超时，请确认 Flask 后端是否运行。' : '未连接到后端，请确认 http://localhost:5001 已启动。');
+        }
+    };
+
     const handleSeedReset = () => {
         confirmAction('确定清空本地数据并恢复示例词表吗？所有自定义数据将丢失。', () => {
             setState(initialState);
@@ -1439,21 +1527,226 @@ function App() {
     } | null>(null);
     const wordTooltipRef = useRef<HTMLDivElement>(null);
 
+    const activeNavId: TabId = activeTab === 'quiz' || activeTab === 'voice' ? 'learn' : activeTab;
+    const activeNavItem = NAV_ITEMS.find((item) => item.id === activeNavId) ?? NAV_ITEMS[0];
+    const settingsMenu: Array<{ id: SettingsSection; label: string }> = [
+        { id: 'model', label: '大模型配置' },
+        { id: 'image', label: '图片服务配置' },
+        { id: 'preference', label: '学习偏好' },
+        { id: 'data', label: '数据管理' },
+        { id: 'about', label: '关于项目' }
+    ];
+
+    const renderSettingsContent = () => {
+        if (settingsSection === 'model') {
+            return (
+                <div className="settings-card">
+                    <div>
+                        <p className="eyebrow">Model Provider</p>
+                        <h2>大模型配置</h2>
+                    </div>
+                    <label>
+                        API Key
+                        <input
+                            type="password"
+                            value={userSettings.apiKey}
+                            onChange={(event) => updateUserSetting('apiKey', event.target.value)}
+                            placeholder="本地保存，用于后续接入配置接口"
+                        />
+                    </label>
+                    <label>
+                        Base URL
+                        <input
+                            value={userSettings.baseUrl}
+                            onChange={(event) => updateUserSetting('baseUrl', event.target.value)}
+                            placeholder="https://api.deepseek.com"
+                        />
+                    </label>
+                    <label>
+                        默认模型
+                        <input
+                            value={userSettings.defaultModel}
+                            onChange={(event) => updateUserSetting('defaultModel', event.target.value)}
+                            placeholder="deepseek-v4-flash"
+                        />
+                    </label>
+                    <div className={`config-status config-${configStatus}`}>
+                        <span>{configMessage}</span>
+                        <button className="secondary-button" type="button" onClick={handleTestConnection} disabled={configStatus === 'checking'}>
+                            {configStatus === 'checking' ? '测试中' : '测试连接'}
+                        </button>
+                    </div>
+                    <p className="muted-text settings-note">
+                        当前后端仍优先读取 `backend_flask/.env`，这里先保存本地配置并检测 Flask 服务状态。
+                    </p>
+                </div>
+            );
+        }
+
+        if (settingsSection === 'image') {
+            return (
+                <div className="settings-card">
+                    <div>
+                        <p className="eyebrow">Image Provider</p>
+                        <h2>图片服务配置</h2>
+                    </div>
+                    <label>
+                        Pexels API Key
+                        <input
+                            type="password"
+                            value={userSettings.pexelsKey}
+                            onChange={(event) => updateUserSetting('pexelsKey', event.target.value)}
+                            placeholder="用于单词详情配图"
+                        />
+                    </label>
+                    <p className="muted-text settings-note">
+                        当前图片搜索接口由 Flask 后端代理，真实运行配置仍以 `.env` 中的 `PEXELS_API_KEY` 为准。
+                    </p>
+                </div>
+            );
+        }
+
+        if (settingsSection === 'preference') {
+            return (
+                <div className="settings-card">
+                    <div>
+                        <p className="eyebrow">Learning Defaults</p>
+                        <h2>学习偏好</h2>
+                    </div>
+                    <label>
+                        默认词表
+                        <select value={userSettings.defaultListId} onChange={(event) => updateUserSetting('defaultListId', event.target.value)}>
+                            <option value="">跟随当前词表</option>
+                            {state.lists.map((list) => (
+                                <option key={list.id} value={list.id}>{list.name}</option>
+                            ))}
+                        </select>
+                    </label>
+                    <label>
+                        默认练习模式
+                        <select value={userSettings.defaultPractice} onChange={(event) => updateUserSetting('defaultPractice', event.target.value as UserSettings['defaultPractice'])}>
+                            <option value="flashcard">词义速记</option>
+                            <option value="reading">AI 短文阅读</option>
+                            <option value="quiz">混合测验</option>
+                            <option value="voice">场景口语陪练</option>
+                        </select>
+                    </label>
+                    <label className="inline-setting">
+                        <input
+                            type="checkbox"
+                            checked={userSettings.speechEnabled}
+                            onChange={(event) => updateUserSetting('speechEnabled', event.target.checked)}
+                        />
+                        语音回复后自动朗读
+                    </label>
+                    <label>
+                        语音识别语言
+                        <select value={userSettings.speechLang} onChange={(event) => updateUserSetting('speechLang', event.target.value)}>
+                            <option value="zh-CN">中文 + 英文混合</option>
+                            <option value="en-US">英文优先</option>
+                        </select>
+                    </label>
+                </div>
+            );
+        }
+
+        if (settingsSection === 'data') {
+            return (
+                <div className="settings-card">
+                    <div>
+                        <p className="eyebrow">Local Data</p>
+                        <h2>数据管理</h2>
+                    </div>
+                    <div className="settings-action-row">
+                        <div>
+                            <strong>恢复示例词表</strong>
+                            <p className="muted-text">清空当前本地词表并回到课程演示数据。</p>
+                        </div>
+                        <button className="ghost-button danger" type="button" onClick={handleSeedReset}>恢复示例</button>
+                    </div>
+                    <div className="settings-action-row">
+                        <div>
+                            <strong>重新显示快速上手</strong>
+                            <p className="muted-text">下次进入或立即查看首次引导流程。</p>
+                        </div>
+                        <button className="ghost-button" type="button" onClick={() => {
+                            localStorage.removeItem(ONBOARDING_KEY);
+                            setOnboardingStep(0);
+                            setShowOnboarding(true);
+                        }}>打开引导</button>
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="settings-card">
+                <div>
+                    <p className="eyebrow">About</p>
+                    <h2>关于 WordForge</h2>
+                </div>
+                <p className="muted-text">
+                    WordForge 是面向同济大学 HCI 课程大作业的 AI 英语学习平台，本轮重构会按“配置与入门 → 建词表/收集词 → 沉浸练习 → 复盘再练习”的闭环推进。
+                </p>
+                <div className="settings-action-row">
+                    <div>
+                        <strong>当前版本</strong>
+                        <p className="muted-text">React 18 + Vite + Flask + OpenAI-compatible SDK</p>
+                    </div>
+                    <span className="muted-pill">Local-first</span>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="app-shell">
             <div className="background-orb background-orb-left" />
             <div className="background-orb background-orb-right" />
 
+            <div className="app-layout">
+                <aside className="app-sidebar panel">
+                    <div className="sidebar-brand">
+                        <span className="brand-mark">WordForge</span>
+                        <p>AI 英语学习平台</p>
+                    </div>
+                    <nav className="sidebar-nav">
+                        {NAV_ITEMS.slice(0, 4).map((item) => (
+                            <button
+                                key={item.id}
+                                type="button"
+                                className={`sidebar-nav-item ${activeNavId === item.id ? 'active' : ''}`}
+                                onClick={() => setActiveTab(item.id)}
+                            >
+                                <span>{item.label}</span>
+                                <small>{item.hint}</small>
+                            </button>
+                        ))}
+                    </nav>
+                    <div className="sidebar-spacer" />
+                    {activeList && (
+                        <button className="current-list-badge sidebar-current-list" type="button" onClick={() => setActiveTab('lists')}>
+                            <span className={`clr-dot clr-${activeList.color}`} />
+                            <span>{activeList.name}</span>
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        className={`sidebar-nav-item sidebar-settings ${activeNavId === 'settings' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('settings')}
+                    >
+                        <span>系统设置</span>
+                        <small>Settings</small>
+                    </button>
+                </aside>
+
             <main className="app-frame">
                 <div className="panel top-bar">
                     <div className="top-bar-left">
-                        <span className="brand-mark">WordForge</span>
-                        {activeList && (
-                            <span className="current-list-badge">
-                                <span className={`clr-dot clr-${activeList.color}`} />
-                                {activeList.name}
-                            </span>
-                        )}
+                        <div>
+                            <p className="eyebrow">WordForge</p>
+                            <h1 className="page-title">{activeNavItem.label}</h1>
+                        </div>
                     </div>
                     <div className="top-bar-right">
                         <button className="ghost-button" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))} style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
@@ -1463,20 +1756,27 @@ function App() {
                     </div>
                 </div>
 
-                <nav className="tab-nav panel">
-                    {TABS.map((tab) => (
-                        <button
-                            key={tab.id}
-                            type="button"
-                            className={`tab-button ${activeTab === tab.id ? 'active' : ''}`}
-                            onClick={() => setActiveTab(tab.id)}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
-                </nav>
-
                 {message && <div className="toast">{message}</div>}
+
+                {(activeTab === 'learn' || activeTab === 'quiz' || activeTab === 'voice') && (
+                    <section className="study-mode-bar panel">
+                        <div>
+                            <p className="eyebrow">Study</p>
+                            <h2>沉浸学习</h2>
+                        </div>
+                        <div className="study-mode-actions">
+                            <button className={`mode-chip ${activeTab === 'learn' ? 'active' : ''}`} type="button" onClick={() => setActiveTab('learn')}>
+                                词义速记 / 短文阅读
+                            </button>
+                            <button className={`mode-chip ${activeTab === 'quiz' ? 'active' : ''}`} type="button" onClick={() => setActiveTab('quiz')}>
+                                混合测验
+                            </button>
+                            <button className={`mode-chip ${activeTab === 'voice' ? 'active' : ''}`} type="button" onClick={() => setActiveTab('voice')}>
+                                场景口语陪练
+                            </button>
+                        </div>
+                    </section>
+                )}
 
                 {activeTab === 'overview' && (
                     <section className="dashboard-grid">
@@ -2586,7 +2886,139 @@ function App() {
                         </div>
                     </section>
                 )}
+
+                {activeTab === 'settings' && (
+                    <section className="settings-layout">
+                        <aside className="panel settings-menu">
+                            <div>
+                                <p className="eyebrow">Settings</p>
+                                <h2>系统设置</h2>
+                            </div>
+                            <div className="settings-menu-list">
+                                {settingsMenu.map((item) => (
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        className={`settings-menu-item ${settingsSection === item.id ? 'active' : ''}`}
+                                        onClick={() => setSettingsSection(item.id)}
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </aside>
+                        <section className="panel settings-content">
+                            {renderSettingsContent()}
+                        </section>
+                    </section>
+                )}
+
+                {showOnboarding && (
+                    <div className="modal-overlay onboarding-overlay" onClick={() => finishOnboarding(false)}>
+                        <div className="modal-panel onboarding-panel" onClick={(event) => event.stopPropagation()}>
+                            {onboardingStep === 0 ? (
+                                <>
+                                    <div>
+                                        <p className="eyebrow">Quick Start</p>
+                                        <h2>从一个真实场景开始学英语</h2>
+                                        <p className="muted-text" style={{ margin: '8px 0 0' }}>
+                                            WordForge 的核心不是背一串孤立单词，而是围绕你马上会遇到的语境，快速建立一组能拿来用的词汇。
+                                        </p>
+                                    </div>
+                                    <div className="onboarding-scenario">
+                                        <p className="eyebrow">Example</p>
+                                        <h3>比如：你想练“咖啡店聊天”</h3>
+                                        <p>系统会围绕点单、推荐、闲聊这些场景，帮你收集相关表达，再把这些词放进卡片、短文、测验和口语对话里反复使用。</p>
+                                    </div>
+                                    <div className="onboarding-steps">
+                                        <div className="onboarding-step">
+                                            <strong>1</strong>
+                                            <div>
+                                                <h3>先定场景</h3>
+                                                <p>创建一个词表：名称填“咖啡店聊天”，场景填“朋友见面、点单、闲聊”。</p>
+                                            </div>
+                                        </div>
+                                        <div className="onboarding-step">
+                                            <strong>2</strong>
+                                            <div>
+                                                <h3>再补语料</h3>
+                                                <p>输入 order、recommend 这类词，AI 可以补全释义、例句，也能继续发现同场景的新词。</p>
+                                            </div>
+                                        </div>
+                                        <div className="onboarding-step">
+                                            <strong>3</strong>
+                                            <div>
+                                                <h3>最后放进练习</h3>
+                                                <p>用卡片记住意思，用短文理解语境，再通过测验和口语陪练确认自己真的会用。</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="modal-actions">
+                                        <button className="ghost-button" type="button" onClick={() => finishOnboarding(false)}>稍后配置</button>
+                                        <button className="primary-button" type="button" onClick={() => setOnboardingStep(1)}>配置 AI 能力</button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div>
+                                        <p className="eyebrow">AI Setup</p>
+                                        <h2>让场景学习真正跑起来</h2>
+                                        <p className="muted-text" style={{ margin: '8px 0 0' }}>
+                                            AI 补全释义、生成短文、场景口语陪练都依赖后端模型服务。这里先确认连接状态；不配置也可以先用示例词表和本地兜底功能体验。
+                                        </p>
+                                    </div>
+                                    <div className="onboarding-config-grid">
+                                        <label>
+                                            API Key
+                                            <input
+                                                type="password"
+                                                value={userSettings.apiKey}
+                                                onChange={(event) => updateUserSetting('apiKey', event.target.value)}
+                                                placeholder="可稍后在系统设置中修改"
+                                            />
+                                        </label>
+                                        <label>
+                                            Base URL
+                                            <input
+                                                value={userSettings.baseUrl}
+                                                onChange={(event) => updateUserSetting('baseUrl', event.target.value)}
+                                            />
+                                        </label>
+                                        <label>
+                                            默认模型
+                                            <input
+                                                value={userSettings.defaultModel}
+                                                onChange={(event) => updateUserSetting('defaultModel', event.target.value)}
+                                            />
+                                        </label>
+                                        <label>
+                                            Pexels Key
+                                            <input
+                                                type="password"
+                                                value={userSettings.pexelsKey}
+                                                onChange={(event) => updateUserSetting('pexelsKey', event.target.value)}
+                                                placeholder="单词配图可选"
+                                            />
+                                        </label>
+                                    </div>
+                                    <div className="config-status config-idle">
+                                        <span>当前运行时仍以 Flask 后端 `.env` 为准，这里会本地保存你的填写并用于后续配置入口。</span>
+                                        <button className="secondary-button" type="button" onClick={handleTestConnection} disabled={configStatus === 'checking'}>
+                                            {configStatus === 'checking' ? '测试中' : '测试连接'}
+                                        </button>
+                                    </div>
+                                    <p className={`config-inline-message config-${configStatus}`}>{configMessage}</p>
+                                    <div className="modal-actions">
+                                        <button className="ghost-button" type="button" onClick={() => setOnboardingStep(0)}>返回</button>
+                                        <button className="primary-button" type="button" onClick={() => finishOnboarding(true)}>进入系统设置</button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
             </main>
+            </div>
         </div>
     );
 }

@@ -41,7 +41,8 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
     font: inherit;
 }
 
@@ -53,6 +54,18 @@ button {
     position: relative;
     min-height: 100vh;
     overflow: hidden;
+}
+
+.app-layout {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 16px;
+    max-width: 1520px;
+    margin: 0 auto;
+    padding: 16px;
 }
 
 .background-orb {
@@ -79,12 +92,10 @@ button {
 
 .app-frame {
     position: relative;
-    z-index: 1;
-    max-width: 1440px;
-    margin: 0 auto;
-    padding: 16px 20px;
+    min-width: 0;
     display: grid;
     gap: 12px;
+    align-content: start;
 }
 
 .panel {
@@ -93,6 +104,89 @@ button {
     box-shadow: var(--shadow);
     backdrop-filter: blur(18px);
     border-radius: 20px;
+}
+
+.app-sidebar {
+    position: sticky;
+    top: 16px;
+    height: calc(100vh - 32px);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.sidebar-brand {
+    display: grid;
+    gap: 8px;
+}
+
+.sidebar-brand .brand-mark {
+    justify-content: center;
+}
+
+.sidebar-brand p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.84rem;
+    text-align: center;
+}
+
+.sidebar-nav,
+.settings-menu-list,
+.study-mode-actions {
+    display: grid;
+    gap: 8px;
+}
+
+.sidebar-nav-item,
+.settings-menu-item,
+.mode-chip {
+    width: 100%;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text);
+    border-radius: 14px;
+    padding: 12px 14px;
+    text-align: left;
+    transition: 0.18s ease;
+}
+
+.sidebar-nav-item {
+    display: grid;
+    gap: 2px;
+}
+
+.sidebar-nav-item small {
+    color: var(--muted);
+    font-size: 0.76rem;
+}
+
+.sidebar-nav-item:hover,
+.sidebar-nav-item.active,
+.settings-menu-item:hover,
+.settings-menu-item.active,
+.mode-chip:hover,
+.mode-chip.active {
+    background: rgba(91, 228, 155, 0.13);
+    border-color: rgba(91, 228, 155, 0.28);
+}
+
+.sidebar-spacer {
+    flex: 1;
+}
+
+.sidebar-current-list {
+    width: 100%;
+    justify-content: flex-start;
+    border-radius: 14px;
+    cursor: pointer;
+}
+
+.page-title {
+    margin: 2px 0 0;
+    font-size: 1.25rem;
+    letter-spacing: 0;
 }
 
 /* Slim top bar */
@@ -462,7 +556,10 @@ button {
 }
 
 .form-card input,
-.form-card textarea {
+.form-card textarea,
+.settings-card input,
+.settings-card select,
+.onboarding-config-grid input {
     width: 100%;
     border: 1px solid rgba(142, 160, 197, 0.22);
     background: rgba(7, 13, 24, 0.88);
@@ -473,7 +570,10 @@ button {
 }
 
 .form-card input:focus,
-.form-card textarea:focus {
+.form-card textarea:focus,
+.settings-card input:focus,
+.settings-card select:focus,
+.onboarding-config-grid input:focus {
     border-color: rgba(91, 228, 155, 0.45);
     box-shadow: 0 0 0 3px rgba(91, 228, 155, 0.12);
 }
@@ -507,6 +607,198 @@ button {
     display: flex;
     justify-content: space-between;
     align-items: center;
+}
+
+.study-mode-bar {
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.study-mode-bar h2,
+.settings-menu h2,
+.settings-card h2,
+.onboarding-panel h2 {
+    margin: 4px 0 0;
+}
+
+.study-mode-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: min(640px, 100%);
+}
+
+.mode-chip {
+    text-align: center;
+}
+
+.settings-layout {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 18px;
+}
+
+.settings-menu,
+.settings-content {
+    padding: 16px;
+}
+
+.settings-menu {
+    display: grid;
+    align-content: start;
+    gap: 16px;
+}
+
+.settings-menu-item {
+    text-align: left;
+}
+
+.settings-card {
+    display: grid;
+    gap: 16px;
+    max-width: 760px;
+}
+
+.settings-card label,
+.onboarding-config-grid label {
+    display: grid;
+    gap: 8px;
+    font-size: 0.92rem;
+    color: var(--text);
+}
+
+.settings-note {
+    margin: 0;
+    font-size: 0.86rem;
+}
+
+.inline-setting {
+    display: flex !important;
+    grid-template-columns: none;
+    align-items: center;
+    gap: 10px !important;
+}
+
+.inline-setting input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent-strong);
+}
+
+.settings-action-row,
+.config-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.settings-action-row p,
+.config-status span {
+    margin: 4px 0 0;
+}
+
+.config-status {
+    align-items: center;
+}
+
+.config-ok {
+    border-color: rgba(91, 228, 155, 0.32);
+}
+
+.config-error {
+    border-color: rgba(255, 123, 147, 0.34);
+}
+
+.config-checking {
+    border-color: rgba(111, 224, 255, 0.34);
+}
+
+.config-inline-message {
+    margin: -4px 0 0;
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
+.onboarding-panel {
+    max-width: 680px;
+    gap: 18px;
+}
+
+.onboarding-steps {
+    display: grid;
+    gap: 12px;
+}
+
+.onboarding-scenario {
+    padding: 16px;
+    border: 1px solid rgba(111, 224, 255, 0.24);
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(111, 224, 255, 0.12), rgba(91, 228, 155, 0.08));
+}
+
+.onboarding-scenario h3,
+.onboarding-scenario p {
+    margin: 0;
+}
+
+.onboarding-scenario h3 {
+    margin-top: 6px;
+    color: var(--text);
+}
+
+.onboarding-scenario p:not(.eyebrow) {
+    margin-top: 8px;
+    color: var(--muted);
+    line-height: 1.6;
+}
+
+.onboarding-step {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.onboarding-step strong {
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(91, 228, 155, 0.14);
+    color: var(--accent);
+}
+
+.onboarding-step h3,
+.onboarding-step p {
+    margin: 0;
+}
+
+.onboarding-step p {
+    color: var(--muted);
+    margin-top: 4px;
+}
+
+.onboarding-config-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
 }
 
 .primary-button,
@@ -764,10 +1056,32 @@ button {
 }
 
 @media (max-width: 1080px) {
+    .app-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .app-sidebar {
+        position: relative;
+        top: auto;
+        height: auto;
+    }
+
+    .sidebar-nav {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .sidebar-spacer {
+        display: none;
+    }
+
+    .sidebar-current-list {
+        display: none;
+    }
 
     .dashboard-grid,
     .workspace-grid,
     .practice-layout,
+    .settings-layout,
     .hero-copy {
         grid-template-columns: 1fr;
     }
@@ -780,8 +1094,24 @@ button {
 }
 
 @media (max-width: 760px) {
-    .app-frame {
+    .app-layout {
         padding: 10px;
+    }
+
+    .app-sidebar {
+        padding: 12px;
+    }
+
+    .sidebar-nav {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .top-bar,
+    .study-mode-bar,
+    .settings-action-row,
+    .config-status {
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .hero-panel,
@@ -815,6 +1145,15 @@ button {
     .tab-button {
         min-width: calc(50% - 6px);
         flex: none;
+    }
+
+    .study-mode-actions,
+    .onboarding-config-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .modal-actions {
+        flex-direction: column-reverse;
     }
 }
 
@@ -853,8 +1192,12 @@ button {
 /* Light mode form controls */
 .light-mode .form-card input,
 .light-mode .form-card textarea,
+.light-mode .settings-card input,
+.light-mode .settings-card select,
+.light-mode .onboarding-config-grid input,
 .light-mode input,
-.light-mode textarea {
+.light-mode textarea,
+.light-mode select {
     background: rgba(255, 255, 255, 0.92);
     color: var(--text);
     border: 1px solid rgba(7, 18, 36, 0.06);
@@ -862,8 +1205,12 @@ button {
 
 .light-mode .form-card input:focus,
 .light-mode .form-card textarea:focus,
+.light-mode .settings-card input:focus,
+.light-mode .settings-card select:focus,
+.light-mode .onboarding-config-grid input:focus,
 .light-mode input:focus,
-.light-mode textarea:focus {
+.light-mode textarea:focus,
+.light-mode select:focus {
     box-shadow: 0 0 0 4px rgba(14, 163, 127, 0.06);
     border-color: var(--accent-strong);
     outline: none;
