@@ -330,6 +330,8 @@ function App() {
         setListDescription('');
         notify('词表已创建。');
         setActiveTab('lists');
+        setListView('workspace');
+        setShowCreateListModal(false);
     };
 
     const handleAddWord = async () => {
@@ -500,7 +502,11 @@ function App() {
     // Word image state
     const [wordImageUrl, setWordImageUrl] = useState('');
     const [wordImageLoading, setWordImageLoading] = useState(false);
-    const [listView, setListView] = useState<'grid' | 'detail'>('grid');
+    const [listView, setListView] = useState<'hall' | 'workspace'>('hall');
+    const [showCreateListModal, setShowCreateListModal] = useState(false);
+    const [showVisionModal, setShowVisionModal] = useState(false);
+    const [wordSearch, setWordSearch] = useState('');
+    const [wordDrawerOpen, setWordDrawerOpen] = useState(false);
 
     const handleGenerateImage = async (term: string, context: string) => {
         setWordImageUrl('');
@@ -668,9 +674,9 @@ function App() {
         } catch { /* ignore */ }
     };
 
-    // 进入 Agent 页时刷新状态
+    // 进入需要资料能力的页面时刷新状态
     useEffect(() => {
-        if (activeTab === 'voice') fetchRagStats();
+        if (activeTab === 'voice' || activeTab === 'lists') fetchRagStats();
     }, [activeTab]);
 
     // 从 PDF 资料提取单词
@@ -783,6 +789,29 @@ function App() {
             }
         }
         setVisionHovered(found);
+    };
+
+    const addVisionHoveredWord = () => {
+        if (!visionHovered) return;
+        const listId = activeList?.id;
+        if (!listId) {
+            notify('请先选择一个词表');
+            return;
+        }
+
+        const term = visionHovered.class;
+        fetch('http://localhost:5001/api/complete-word', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ term, context: activeList?.context || '通用' }),
+            signal: AbortSignal.timeout(6000)
+        }).then((resp) => resp.json()).then((data) => {
+            setState((current) => addWordToList(current, listId, term, data.meaning || term, data.example || '', data.note || ''));
+            notify(`已加入「${activeList?.name}」`);
+        }).catch(() => {
+            setState((current) => addWordToList(current, listId, term, ''));
+            notify(`已加入「${activeList?.name}」`);
+        });
     };
 
     // 绘制轮廓
@@ -1117,6 +1146,8 @@ function App() {
 
         confirmAction(`确定删除词表「${list.name}」吗？此操作不可撤销。`, () => {
             setState((current) => removeList(current, listId));
+            setListView('hall');
+            setWordDrawerOpen(false);
             notify('词表已删除。');
         });
     };
@@ -1133,6 +1164,7 @@ function App() {
 
         confirmAction(`确定删除单词「${word.term}」吗？`, () => {
             setState((current) => deleteWordFromList(current, activeList.id, wordId));
+            setWordDrawerOpen(false);
             notify('单词已删除。');
         });
     };
@@ -1265,6 +1297,8 @@ function App() {
             setState(initialState);
             setSelectedWordId(initialState.lists[0]?.words[0]?.id ?? '');
             setActiveTab('overview');
+            setListView('hall');
+            setWordDrawerOpen(false);
             setLearnRound((value) => value + 1);
             setQuizRound((value) => value + 1);
             notify('已恢复示例数据。');
@@ -1281,7 +1315,7 @@ function App() {
                 className={`word-card ${isSelected ? 'word-card-selected' : ''}`}
                 onClick={() => {
                     setSelectedWordId(word.id);
-                    setListView('detail');
+                    setWordDrawerOpen(true);
                 }}
             >
                 <div className="word-card-top">
@@ -1817,6 +1851,8 @@ function App() {
                                         if (list) {
                                             setState((current) => ({ ...current, activeListId: list.id }));
                                             setSelectedWordId(word.id);
+                                            setListView('workspace');
+                                            setWordDrawerOpen(true);
                                             setActiveTab('lists');
                                         }
                                     }}>
@@ -1832,182 +1868,386 @@ function App() {
                 )}
 
                 {activeTab === 'lists' && (
-                    <section className="workspace-grid">
-                        <aside className="panel sidebar-panel">
-                            <div className="panel-head">
-                                <div>
-                                    <p className="eyebrow">词表列表</p>
-                                    <h2>所有词表</h2>
-                                </div>
-                            </div>
-                            <div className="list-stack">
-                                {state.lists.map((list) => (
-                                    <button
-                                        key={list.id}
-                                        type="button"
-                                        className={`list-card ${activeList?.id === list.id ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setState((current) => ({ ...current, activeListId: list.id }));
-                                            setSelectedWordId(list.words[0]?.id ?? '');
-                                            setListView('grid');
-                                        }}
-                                    >
-                                        <span className={`list-color list-${list.color}`} />
-                                        <div className="list-card-body">
-                                            <strong>{list.name}</strong>
-                                            <p>{list.context}</p>
-                                            <small>{list.words.length} 个单词</small>
-                                        </div>
-                                        <span className="delete-chip" onClick={(event) => {
-                                            event.stopPropagation();
-                                            handleDeleteList(list.id);
-                                        }}>删除</span>
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="form-card">
-                                <p className="eyebrow">新建词表</p>
-                                <label>
-                                    名称
-                                    <input value={listName} onChange={(event) => setListName(event.target.value)} placeholder="例如：咖啡店聊天" />
-                                </label>
-                                <label>
-                                    场景
-                                    <input value={listContext} onChange={(event) => setListContext(event.target.value)} placeholder="例如：朋友见面和点单" />
-                                </label>
-                                <label>
-                                    描述
-                                    <textarea value={listDescription} onChange={(event) => setListDescription(event.target.value)} placeholder="可选，写一句这个词表为什么存在。" rows={3} />
-                                </label>
-                                <button className="primary-button" type="button" onClick={handleCreateList}>创建词表</button>
-                            </div>
-                        </aside>
-
-                        <section className="panel main-panel">
-                            {!activeList ? (
-                                <div className="empty-state">还没有词表，先从左边创建一个。</div>
-                            ) : listView === 'grid' ? (
-                                <>
-                                    <div className="panel-head">
-                                        <div>
-                                            <p className="eyebrow">当前词表</p>
-                                            <h2>{activeList.name}</h2>
-                                            <p className="muted-text">{activeList.description}</p>
-                                        </div>
-                                        <div className="stats-inline">
-                                            <span>{activeList.words.length} 个词</span>
-                                            <span>{Math.round(activeList.words.reduce((sum, word) => sum + word.score, 0) / Math.max(1, activeList.words.length))}% 平均掌握度</span>
-                                        </div>
+                    <>
+                        {listView === 'hall' ? (
+                            <section className="vocab-page">
+                                <div className="panel vocab-hero">
+                                    <div>
+                                        <p className="eyebrow">My Word Lists</p>
+                                        <h2>我的词库</h2>
+                                        <p className="muted-text">先用真实场景组织词汇，再把这些词放进短文、卡片、测验和口语练习里。</p>
                                     </div>
+                                    <button className="primary-button" type="button" onClick={() => setShowCreateListModal(true)}>+ 创建新词表</button>
+                                </div>
 
-                                    <div className="form-card compact-form">
-                                        <p className="eyebrow">添加单词</p>
-                                        <div className="inline-form">
+                                <div className="vocab-list-grid">
+                                    {state.lists.map((list) => {
+                                        const average = Math.round(list.words.reduce((sum, word) => sum + word.score, 0) / Math.max(1, list.words.length));
+                                        const mastered = list.words.filter((word) => word.mastered).length;
+                                        return (
+                                            <article key={list.id} className="panel vocab-list-card">
+                                                <button
+                                                    type="button"
+                                                    className="vocab-list-main"
+                                                    onClick={() => {
+                                                        setState((current) => ({ ...current, activeListId: list.id }));
+                                                        setSelectedWordId(list.words[0]?.id ?? '');
+                                                        setWordSearch('');
+                                                        setWordDrawerOpen(false);
+                                                        setListView('workspace');
+                                                    }}
+                                                >
+                                                    <span className={`list-color list-${list.color}`} />
+                                                    <div>
+                                                        <p className="eyebrow">Scenario</p>
+                                                        <h3>{list.name}</h3>
+                                                        <p>{list.context}</p>
+                                                    </div>
+                                                </button>
+                                                <div className="vocab-list-meta">
+                                                    <span>{list.words.length} 个单词</span>
+                                                    <span>{mastered} 个已掌握</span>
+                                                </div>
+                                                <div className="progress-track">
+                                                    <div className="progress-fill" style={{ width: `${average}%` }} />
+                                                </div>
+                                                <div className="vocab-card-actions">
+                                                    <strong>{average}% 掌握度</strong>
+                                                    <button className="ghost-button danger" type="button" onClick={() => handleDeleteList(list.id)}>删除</button>
+                                                </div>
+                                            </article>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+                        ) : !activeList ? (
+                            <section className="panel main-panel">
+                                <div className="empty-state">还没有词表，先创建一个场景词表。</div>
+                            </section>
+                        ) : (
+                            <section className="vocab-workspace">
+                                <div className="panel vocab-workspace-head">
+                                    <button className="ghost-button" type="button" onClick={() => {
+                                        setListView('hall');
+                                        setWordDrawerOpen(false);
+                                    }}>← 返回词库</button>
+                                    <div>
+                                        <p className="eyebrow">List Workspace</p>
+                                        <h2>{activeList.name}</h2>
+                                        <p className="muted-text">{activeList.description}</p>
+                                    </div>
+                                    <div className="vocab-workspace-stats">
+                                        <span>{activeList.words.length} 个词</span>
+                                        <strong>{Math.round(activeList.words.reduce((sum, word) => sum + word.score, 0) / Math.max(1, activeList.words.length))}%</strong>
+                                    </div>
+                                </div>
+
+                                <div className="vocab-workspace-grid">
+                                    <section className="panel vocab-word-list-panel">
+                                        <div className="panel-head">
+                                            <div>
+                                                <p className="eyebrow">Words</p>
+                                                <h2>单词列表</h2>
+                                            </div>
+                                            <span className="muted-pill">{activeList.words.length} 个</span>
+                                        </div>
+                                        <input
+                                            className="vocab-search"
+                                            value={wordSearch}
+                                            onChange={(event) => setWordSearch(event.target.value)}
+                                            placeholder="搜索单词或释义..."
+                                        />
+                                        <div className="vocab-word-table">
+                                            {activeList.words
+                                                .filter((word) => {
+                                                    const query = wordSearch.trim().toLowerCase();
+                                                    if (!query) return true;
+                                                    return `${word.term} ${word.meaning} ${word.example} ${word.note}`.toLowerCase().includes(query);
+                                                })
+                                                .map((word) => (
+                                                    <button
+                                                        key={word.id}
+                                                        type="button"
+                                                        className={`vocab-word-row ${selectedWord?.id === word.id && wordDrawerOpen ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            setSelectedWordId(word.id);
+                                                            setWordImageUrl('');
+                                                            setWordDrawerOpen(true);
+                                                        }}
+                                                    >
+                                                        <div>
+                                                            <strong>{word.term}</strong>
+                                                            <p>{word.meaning}</p>
+                                                        </div>
+                                                        <div className="vocab-word-score">
+                                                            <span>{word.score}%</span>
+                                                            <div className="progress-track">
+                                                                <div className="progress-fill" style={{ width: `${word.score}%` }} />
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            {activeList.words.length === 0 && <div className="empty-state">这个词表还没有单词，先从右侧加入几个。</div>}
+                                        </div>
+                                    </section>
+
+                                    <aside className="vocab-actions-panel">
+                                        <div className="panel form-card vocab-action-card">
+                                            <p className="eyebrow">手动添加</p>
                                             <label>
                                                 单词
                                                 <input value={wordTerm} onChange={(event) => setWordTerm(event.target.value)} placeholder="例如：luggage" />
                                             </label>
                                             <label>
                                                 释义（可留空）
-                                                <input value={wordMeaning} onChange={(event) => setWordMeaning(event.target.value)} placeholder="留空时使用ai自动生成" />
+                                                <input value={wordMeaning} onChange={(event) => setWordMeaning(event.target.value)} placeholder="留空时使用 AI 自动补全" />
                                             </label>
+                                            <button className="primary-button" type="button" onClick={handleAddWord}>加入词表</button>
                                         </div>
-                                        <button className="primary-button" type="button" onClick={handleAddWord}>加入词表</button>
-                                    </div>
 
-                                    <div className="form-card compact-form">
-                                        <p className="eyebrow">智能发现新单词</p>
-                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                            <label style={{ flex: 1 }}>
-                                                数量
-                                                <input type="number" min={1} max={20} value={genCount} onChange={(e) => setGenCount(Number(e.target.value))} />
-                                            </label>
-                                            <label style={{ flex: 2 }}>
-                                                难度
-                                                <div className="difficulty-pills">
-                                                    {(['basic', 'intermediate', 'advanced'] as const).map((d) => (
-                                                        <button
-                                                            key={d}
-                                                            type="button"
-                                                            className={`difficulty-pill${genDifficulty === d ? ' active' : ''}`}
-                                                            onClick={() => setGenDifficulty(d)}
-                                                        >
-                                                            {{ basic: '入门', intermediate: '中级', advanced: '高级' }[d]}
-                                                        </button>
-                                                    ))}
+                                        <div className="panel form-card vocab-action-card">
+                                            <div className="panel-head">
+                                                <div>
+                                                    <p className="eyebrow">AI Discovery</p>
+                                                    <h3>智能发现新单词</h3>
                                                 </div>
-                                            </label>
-                                            <button className="primary-button" type="button" onClick={handleGenerateWords} disabled={genLoading}>
-                                                {genLoading ? '生成中…' : '获取新单词'}
-                                            </button>
-                                        </div>
-
-                                        {genResults.length > 0 && (
-                                            <div style={{ marginTop: 12 }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <strong>候选单词（{genResults.length}）</strong>
-                                                    <div>
-                                                        <button className="ghost-button" type="button" onClick={() => setGenResults([])}>清空</button>
-                                                        <button className="primary-button" type="button" onClick={handleAddAllGenerated} style={{ marginLeft: 8 }}>全部加入</button>
+                                                {genResults.length > 0 && <span className="muted-pill">{genResults.length} 个候选</span>}
+                                            </div>
+                                            <div className="vocab-inline-controls">
+                                                <label>
+                                                    数量
+                                                    <input type="number" min={1} max={20} value={genCount} onChange={(event) => setGenCount(Number(event.target.value))} />
+                                                </label>
+                                                <label>
+                                                    难度
+                                                    <div className="difficulty-pills">
+                                                        {(['basic', 'intermediate', 'advanced'] as const).map((d) => (
+                                                            <button key={d} type="button" className={`difficulty-pill${genDifficulty === d ? ' active' : ''}`} onClick={() => setGenDifficulty(d)}>
+                                                                {{ basic: '入门', intermediate: '中级', advanced: '高级' }[d]}
+                                                            </button>
+                                                        ))}
                                                     </div>
-                                                </div>
-                                                <div style={{ marginTop: 8 }}>
-                                                    {genResults.map((w) => (
-                                                        <div key={w.id} className="overview-word-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 10, marginBottom: 8 }}>
+                                                </label>
+                                            </div>
+                                            <button className="primary-button" type="button" onClick={handleGenerateWords} disabled={genLoading}>
+                                                {genLoading ? '生成中…' : '围绕场景生成'}
+                                            </button>
+                                            {genResults.length > 0 && (
+                                                <div className="generated-list">
+                                                    <div className="generated-list-head">
+                                                        <strong>候选词</strong>
+                                                        <div>
+                                                            <button className="ghost-button" type="button" onClick={() => setGenResults([])}>清空</button>
+                                                            <button className="primary-button" type="button" onClick={handleAddAllGenerated}>全部加入</button>
+                                                        </div>
+                                                    </div>
+                                                    {genResults.map((word) => (
+                                                        <div key={word.id} className="generated-word-row">
                                                             <div>
-                                                                <strong>{w.term}</strong>
-                                                                <p className="muted-text">{w.meaning}</p>
-                                                                <small>{w.example}</small>
+                                                                <strong>{word.term}</strong>
+                                                                <p>{word.meaning}</p>
                                                             </div>
-                                                            <div style={{ display: 'flex', gap: 8 }}>
-                                                                <button className="secondary-button" type="button" onClick={() => handleAddGenerated(w)}>加入</button>
-                                                            </div>
+                                                            <button className="secondary-button" type="button" onClick={() => handleAddGenerated(word)}>加入</button>
                                                         </div>
                                                     ))}
                                                 </div>
+                                            )}
+                                        </div>
+
+                                        <div className="panel form-card vocab-action-card">
+                                            <div className="panel-head">
+                                                <div>
+                                                    <p className="eyebrow">Materials</p>
+                                                    <h3>资料导入</h3>
+                                                </div>
+                                                <span className="muted-pill">{ragChunks} 段</span>
                                             </div>
-                                        )}
+                                            <input ref={fileInputRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={handleFileSelect} />
+                                            <div className="vocab-action-row">
+                                                <button className="primary-button" type="button" onClick={() => fileInputRef.current?.click()} disabled={ragUploading}>
+                                                    {ragUploading ? '上传中…' : '上传 PDF'}
+                                                </button>
+                                                <button className="ghost-button" type="button" onClick={extractWordsFromRag} disabled={extracting || ragChunks === 0}>
+                                                    {extracting ? '提取中…' : '提取生词'}
+                                                </button>
+                                            </div>
+                                            {ragError && <p className="muted-text" style={{ color: 'var(--danger)' }}>{ragError}</p>}
+                                            {ragFiles.length > 0 ? (
+                                                <div className="rag-file-list compact">
+                                                    {ragFiles.slice().reverse().slice(0, 4).map((file, index) => (
+                                                        <div key={`${file.filename}-${index}`} className="rag-file-row">
+                                                            <span>{file.filename}</span>
+                                                            <small>{file.chunks} 段 · {file.pages} 页</small>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="muted-text settings-note">上传课程资料后，可一键提取其中的重要英文词汇。</p>
+                                            )}
+                                        </div>
+
+                                        <div className="panel form-card vocab-action-card">
+                                            <div className="panel-head">
+                                                <div>
+                                                    <p className="eyebrow">Vision</p>
+                                                    <h3>图片识词</h3>
+                                                </div>
+                                                {visionLoading && <span className="muted-pill">检测中</span>}
+                                            </div>
+                                            <p className="muted-text settings-note">上传图片后在大图上悬停物体，选择识别出的英文名称加入当前词表。</p>
+                                            <button className="ghost-button" type="button" onClick={() => setShowVisionModal(true)}>
+                                                打开图片识词
+                                            </button>
+                                            {visionImage && (
+                                                <div className="vision-preview-strip">
+                                                    <span>已选择图片</span>
+                                                    <strong>{visionDetections.length ? `${visionDetections.length} 个候选物体` : '等待检测'}</strong>
+                                                </div>
+                                            )}
+                                            {!visionModel && <p className="muted-text settings-note">正在加载本地识图模型，首次使用可能需要几秒。</p>}
+                                        </div>
+                                    </aside>
+                                </div>
+                            </section>
+                        )}
+
+                        {showCreateListModal && (
+                            <div className="modal-overlay" onClick={() => setShowCreateListModal(false)}>
+                                <div className="modal-panel create-list-modal" onClick={(event) => event.stopPropagation()}>
+                                    <div className="panel-head">
+                                        <div>
+                                            <p className="eyebrow">New List</p>
+                                            <h2>创建场景词表</h2>
+                                        </div>
+                                        <button className="ghost-button" type="button" onClick={() => setShowCreateListModal(false)}>关闭</button>
+                                    </div>
+                                    <div className="form-card" style={{ border: 'none', background: 'transparent', padding: 0 }}>
+                                        <label>
+                                            名称
+                                            <input value={listName} onChange={(event) => setListName(event.target.value)} placeholder="例如：咖啡店聊天" />
+                                        </label>
+                                        <label>
+                                            场景
+                                            <input value={listContext} onChange={(event) => setListContext(event.target.value)} placeholder="例如：朋友见面、点单、闲聊" />
+                                        </label>
+                                        <label>
+                                            描述
+                                            <textarea value={listDescription} onChange={(event) => setListDescription(event.target.value)} placeholder="可选，写一句这个词表为什么存在。" rows={3} />
+                                        </label>
+                                        <button className="primary-button" type="button" onClick={handleCreateList}>创建并进入工作台</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {showVisionModal && (
+                            <div className="modal-overlay vision-modal-overlay" onClick={() => setShowVisionModal(false)}>
+                                <div className="vision-modal panel" onClick={(event) => event.stopPropagation()}>
+                                    <div className="panel-head">
+                                        <div>
+                                            <p className="eyebrow">Vision Vocabulary</p>
+                                            <h2>图片识词</h2>
+                                            <p className="muted-text">在图片上移动鼠标，悬停到识别框后可把物体英文名加入「{activeList?.name ?? '当前词表'}」。</p>
+                                        </div>
+                                        <button className="ghost-button" type="button" onClick={() => setShowVisionModal(false)}>关闭</button>
                                     </div>
 
-                                    <div className="word-grid">
-                                        {activeList.words.map(renderWordCard)}
+                                    <input type="file" accept="image/*" style={{ display: 'none' }} id="vocab-vision-modal-file-input" onChange={handleVisionFileSelect} />
+
+                                    {!visionImage ? (
+                                        <div className="vision-upload-state">
+                                            <div>
+                                                <p className="eyebrow">Upload</p>
+                                                <h3>上传一张场景图片</h3>
+                                                <p className="muted-text">例如咖啡店、机场、办公室或课堂照片。识别模型在浏览器本地运行，图片不会上传到后端。</p>
+                                            </div>
+                                            <button className="primary-button" type="button" onClick={() => document.getElementById('vocab-vision-modal-file-input')?.click()}>
+                                                上传图片
+                                            </button>
+                                            {!visionModel && <p className="muted-text settings-note">正在加载本地识图模型，首次加载可能需要几秒。</p>}
+                                        </div>
+                                    ) : (
+                                        <div className="vision-modal-body">
+                                            <div className="vision-canvas-wrap" onMouseMove={handleVisionMouseMove} onMouseLeave={() => setVisionHovered(null)}>
+                                                <img ref={visionImgRef} src={visionImage} alt="识别对象" />
+                                                <canvas ref={visionCanvasRef} />
+                                                {visionHovered && (
+                                                    <div className="vocab-vision-popover vision-modal-popover">
+                                                        <strong>{visionHovered.class}</strong>
+                                                        <button className="secondary-button" type="button" onClick={addVisionHoveredWord}>加入词表</button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <aside className="vision-side-panel">
+                                                <div className="summary-card wide">
+                                                    <span>检测状态</span>
+                                                    <strong>{visionLoading ? '检测中' : visionDetections.length ? `${visionDetections.length} 个物体` : '暂无结果'}</strong>
+                                                </div>
+                                                <p className="muted-text settings-note">把鼠标移动到图片中的物体框上，底部会出现英文名称和加入词表按钮。</p>
+                                                {visionHovered ? (
+                                                    <div className="vision-selected-object">
+                                                        <span>当前悬停</span>
+                                                        <strong>{visionHovered.class}</strong>
+                                                        <button className="primary-button" type="button" onClick={addVisionHoveredWord}>加入当前词表</button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="empty-state">悬停到图片中的识别框查看物体名称。</div>
+                                                )}
+                                                <div className="vision-modal-actions">
+                                                    <button className="ghost-button" type="button" onClick={() => document.getElementById('vocab-vision-modal-file-input')?.click()}>
+                                                        换一张图片
+                                                    </button>
+                                                    <button className="ghost-button danger" type="button" onClick={() => {
+                                                        setVisionImage(null);
+                                                        setVisionDetections([]);
+                                                        setVisionHovered(null);
+                                                    }}>清除图片</button>
+                                                </div>
+                                            </aside>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {wordDrawerOpen && selectedWord && activeList && (
+                            <div className="word-drawer-overlay" onClick={() => setWordDrawerOpen(false)}>
+                                <aside className="word-drawer panel" onClick={(event) => event.stopPropagation()}>
+                                    <div className="panel-head">
+                                        <div>
+                                            <p className="eyebrow">Word Detail</p>
+                                            <h2>{selectedWord.term}</h2>
+                                        </div>
+                                        <button className="ghost-button" type="button" onClick={() => setWordDrawerOpen(false)}>关闭</button>
                                     </div>
-                                </>
-                            ) : selectedWord ? (
-                                <article className="detail-card" style={{ border: 'none', background: 'transparent' }}>
-                                    <div className="panel-head" style={{ marginBottom: 8 }}>
-                                        <button className="ghost-button" type="button" onClick={() => setListView('grid')} style={{ padding: '6px 12px' }}>← 返回</button>
-                                        <span className={`mastery-badge ${selectedWord.mastered ? 'is-mastered' : ''}`}>
-                                            {selectedWord.mastered ? '已掌握' : '学习中'}
-                                        </span>
-                                    </div>
-                                    <h2 style={{ fontSize: '1.6rem', margin: '4px 0' }}>{selectedWord.term}</h2>
+                                    <span className={`mastery-badge ${selectedWord.mastered ? 'is-mastered' : ''}`}>
+                                        {selectedWord.mastered ? '已掌握' : '学习中'} · {selectedWord.score}%
+                                    </span>
                                     <p className="detail-meaning">{selectedWord.meaning}</p>
                                     <p className="muted-text">{selectedWord.note}</p>
-
-                                    <div className="detail-example" style={{ marginTop: 14 }}>
+                                    <div className="detail-example">
                                         <strong>例句</strong>
                                         <p>{selectedWord.example}</p>
                                     </div>
-
+                                    <div className="progress-track">
+                                        <div className="progress-fill" style={{ width: `${selectedWord.score}%` }} />
+                                    </div>
                                     {wordImageUrl && (
-                                        <div className="detail-image" style={{ marginTop: 14 }}>
+                                        <div className="detail-image">
                                             <img src={wordImageUrl} alt={selectedWord.term} className="word-image" />
                                         </div>
                                     )}
-
-                                    <div className="detail-actions" style={{ marginTop: 16 }}>
-                                        <button className="ghost-button" type="button" onClick={() => handleGenerateImage(selectedWord.term, activeList?.context || '')} disabled={wordImageLoading}>
+                                    <div className="detail-actions">
+                                        <button className="ghost-button" type="button" onClick={() => handleGenerateImage(selectedWord.term, activeList.context)} disabled={wordImageLoading}>
                                             {wordImageLoading ? '搜索图片…' : wordImageUrl ? '换一张' : '生成图片'}
                                         </button>
                                         <button className="ghost-button danger" type="button" onClick={() => handleDeleteWord(selectedWord.id)}>删除这个词</button>
                                     </div>
-                                </article>
-                            ) : (
-                                <div className="empty-state">选择左侧词表中一个单词查看详情。</div>
-                            )}
-                        </section>
-                    </section>
+                                </aside>
+                            </div>
+                        )}
+                    </>
                 )}
 
                 {activeTab === 'learn' && (

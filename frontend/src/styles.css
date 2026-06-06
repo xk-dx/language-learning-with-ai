@@ -458,6 +458,466 @@ button {
     margin-bottom: 16px;
 }
 
+.vocab-page,
+.vocab-workspace {
+    display: grid;
+    gap: 18px;
+}
+
+.vocab-hero,
+.vocab-workspace-head {
+    padding: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.vocab-hero h2,
+.vocab-workspace-head h2,
+.vocab-action-card h3,
+.vocab-list-card h3 {
+    margin: 4px 0;
+}
+
+.vocab-hero p,
+.vocab-workspace-head p,
+.vocab-list-main p,
+.generated-word-row p {
+    margin: 0;
+}
+
+.vocab-list-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.vocab-list-card {
+    padding: 16px;
+    display: grid;
+    gap: 14px;
+}
+
+.vocab-list-main {
+    border: none;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr);
+    gap: 14px;
+    align-items: stretch;
+}
+
+.vocab-list-main .list-color {
+    height: auto;
+    min-height: 96px;
+}
+
+.vocab-list-main h3 {
+    color: var(--text);
+    font-size: 1.15rem;
+}
+
+.vocab-list-main p,
+.vocab-list-meta {
+    color: var(--muted);
+}
+
+.vocab-list-meta,
+.vocab-card-actions,
+.vocab-action-row,
+.generated-list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.vocab-list-meta {
+    font-size: 0.86rem;
+}
+
+.vocab-card-actions strong {
+    color: var(--text);
+}
+
+.vocab-workspace-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    gap: 18px;
+    align-items: start;
+}
+
+.vocab-workspace-stats {
+    min-width: 130px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    text-align: right;
+}
+
+.vocab-workspace-stats span,
+.vocab-workspace-stats strong {
+    display: block;
+}
+
+.vocab-workspace-stats span {
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+.vocab-workspace-stats strong {
+    color: var(--accent);
+    font-size: 1.45rem;
+}
+
+.vocab-word-list-panel,
+.vocab-action-card {
+    padding: 16px;
+}
+
+.vocab-word-list-panel {
+    display: grid;
+    gap: 14px;
+}
+
+.vocab-search {
+    width: 100%;
+    border: 1px solid rgba(142, 160, 197, 0.22);
+    background: rgba(7, 13, 24, 0.88);
+    color: var(--text);
+    border-radius: 14px;
+    padding: 12px 14px;
+    outline: none;
+}
+
+.vocab-search:focus {
+    border-color: rgba(91, 228, 155, 0.45);
+    box-shadow: 0 0 0 3px rgba(91, 228, 155, 0.12);
+}
+
+.vocab-word-table,
+.vocab-actions-panel,
+.generated-list,
+.rag-file-list {
+    display: grid;
+    gap: 10px;
+}
+
+.vocab-word-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 120px;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text);
+    border-radius: 14px;
+    padding: 12px 14px;
+    text-align: left;
+}
+
+.vocab-word-row:hover,
+.vocab-word-row.active {
+    border-color: rgba(91, 228, 155, 0.34);
+    background: rgba(91, 228, 155, 0.08);
+}
+
+.vocab-word-row strong {
+    color: var(--text);
+    font-size: 1rem;
+}
+
+.vocab-word-row p {
+    color: var(--muted);
+    margin: 4px 0 0;
+}
+
+.vocab-word-score {
+    display: grid;
+    gap: 6px;
+    color: var(--accent);
+    font-weight: 700;
+    text-align: right;
+}
+
+.vocab-inline-controls {
+    display: grid;
+    grid-template-columns: 0.8fr 1.2fr;
+    gap: 10px;
+    align-items: end;
+}
+
+.generated-list {
+    margin-top: 4px;
+}
+
+.generated-word-row,
+.rag-file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.rag-file-row {
+    align-items: flex-start;
+}
+
+.rag-file-row span,
+.rag-file-row small {
+    display: block;
+}
+
+.rag-file-row span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+}
+
+.rag-file-row small {
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.vocab-vision-box {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.vocab-vision-box img,
+.vocab-vision-box canvas {
+    width: 100%;
+    display: block;
+}
+
+.vocab-vision-box canvas {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    pointer-events: none;
+}
+
+.vocab-vision-popover {
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--panel-border);
+    background: rgba(13, 23, 42, 0.94);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+    color: #edf4ff;
+    white-space: nowrap;
+}
+
+.vocab-vision-popover strong {
+    color: #edf4ff;
+}
+
+.vocab-vision-popover .secondary-button {
+    border-color: rgba(91, 228, 155, 0.34);
+    background: rgba(91, 228, 155, 0.14);
+    color: #5be49b;
+}
+
+.vocab-vision-popover .secondary-button:hover {
+    background: rgba(91, 228, 155, 0.22);
+    color: #8ff3bd;
+}
+
+.vocab-vision-change {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 5px 9px;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.vision-preview-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.vision-preview-strip span {
+    color: var(--muted);
+}
+
+.vision-preview-strip strong {
+    color: var(--accent-alt);
+}
+
+.vision-modal-overlay {
+    align-items: center;
+}
+
+.vision-modal {
+    width: min(1120px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    padding: 20px;
+    display: grid;
+    gap: 18px;
+    overflow: hidden;
+}
+
+.vision-modal .panel-head {
+    align-items: flex-start;
+}
+
+.vision-modal .panel-head h2,
+.vision-modal .panel-head p {
+    margin: 4px 0 0;
+}
+
+.vision-upload-state {
+    min-height: min(560px, 64vh);
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 18px;
+    text-align: center;
+    border: 1px dashed rgba(111, 224, 255, 0.28);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 28px;
+}
+
+.vision-upload-state h3 {
+    margin: 6px 0;
+    color: var(--text);
+}
+
+.vision-upload-state p {
+    max-width: 560px;
+}
+
+.vision-modal-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 16px;
+    min-height: 0;
+}
+
+.vision-canvas-wrap {
+    position: relative;
+    min-height: min(620px, 68vh);
+    max-height: min(680px, 72vh);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.vision-canvas-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.vision-canvas-wrap canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.vision-modal-popover {
+    bottom: 18px;
+}
+
+.vision-side-panel {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    min-width: 0;
+}
+
+.vision-selected-object {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid rgba(91, 228, 155, 0.28);
+    border-radius: 14px;
+    background: rgba(91, 228, 155, 0.08);
+}
+
+.vision-selected-object span {
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.vision-selected-object strong {
+    color: var(--text);
+    font-size: 1.2rem;
+}
+
+.vision-modal-actions {
+    display: grid;
+    gap: 8px;
+}
+
+.word-drawer-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 980;
+    background: rgba(0, 0, 0, 0.28);
+    display: flex;
+    justify-content: flex-end;
+    padding: 16px;
+}
+
+.word-drawer {
+    width: min(420px, 100%);
+    height: 100%;
+    padding: 18px;
+    display: grid;
+    align-content: start;
+    gap: 16px;
+    overflow-y: auto;
+    animation: drawer-in 0.2s ease;
+}
+
+@keyframes drawer-in {
+    from {
+        opacity: 0;
+        transform: translateX(24px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
 .workspace-grid {
     grid-template-columns: minmax(280px, 360px) 1fr;
     align-items: stretch;
@@ -1079,8 +1539,10 @@ button {
     }
 
     .dashboard-grid,
+    .vocab-list-grid,
     .workspace-grid,
     .practice-layout,
+    .vocab-workspace-grid,
     .settings-layout,
     .hero-copy {
         grid-template-columns: 1fr;
@@ -1107,6 +1569,8 @@ button {
     }
 
     .top-bar,
+    .vocab-hero,
+    .vocab-workspace-head,
     .study-mode-bar,
     .settings-action-row,
     .config-status {
@@ -1148,12 +1612,34 @@ button {
     }
 
     .study-mode-actions,
+    .vocab-inline-controls,
+    .vision-modal-body,
     .onboarding-config-grid {
         grid-template-columns: 1fr;
     }
 
+    .vocab-word-row {
+        grid-template-columns: 1fr;
+    }
+
+    .vocab-word-score {
+        text-align: left;
+    }
+
     .modal-actions {
         flex-direction: column-reverse;
+    }
+
+    .vision-modal {
+        width: calc(100vw - 20px);
+        max-height: calc(100vh - 20px);
+        padding: 14px;
+        overflow-y: auto;
+    }
+
+    .vision-canvas-wrap {
+        min-height: 360px;
+        max-height: 58vh;
     }
 }
 
@@ -1195,6 +1681,7 @@ button {
 .light-mode .settings-card input,
 .light-mode .settings-card select,
 .light-mode .onboarding-config-grid input,
+.light-mode .vocab-search,
 .light-mode input,
 .light-mode textarea,
 .light-mode select {
@@ -1208,6 +1695,7 @@ button {
 .light-mode .settings-card input:focus,
 .light-mode .settings-card select:focus,
 .light-mode .onboarding-config-grid input:focus,
+.light-mode .vocab-search:focus,
 .light-mode input:focus,
 .light-mode textarea:focus,
 .light-mode select:focus {
