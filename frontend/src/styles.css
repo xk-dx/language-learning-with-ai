@@ -399,6 +399,238 @@ button {
     grid-template-columns: 1fr 1fr 1fr;
 }
 
+.dashboard-home,
+.progress-report {
+    display: grid;
+    gap: 18px;
+}
+
+.dashboard-hero,
+.report-hero {
+    padding: 22px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+}
+
+.dashboard-hero h2,
+.report-hero h2 {
+    margin: 4px 0 8px;
+    font-size: 1.7rem;
+}
+
+.dashboard-hero-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.dashboard-wordlist-home {
+    gap: 16px;
+}
+
+.dashboard-overview-stats {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.dashboard-overview-stats span {
+    padding: 8px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+
+.dashboard-stat-grid,
+.report-stat-row {
+    display: grid;
+    gap: 14px;
+}
+
+.dashboard-stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.report-stat-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dashboard-stat-card {
+    padding: 18px;
+}
+
+.dashboard-stat-card span,
+.dashboard-stat-card p {
+    color: var(--muted);
+}
+
+.dashboard-stat-card span {
+    display: block;
+    font-size: 0.82rem;
+}
+
+.dashboard-stat-card strong {
+    display: block;
+    margin: 6px 0;
+    font-size: clamp(1.8rem, 3vw, 2.5rem);
+    color: var(--text);
+}
+
+.dashboard-stat-card p {
+    margin: 0;
+    font-size: 0.86rem;
+}
+
+.report-word-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 18px;
+}
+
+.dashboard-list-panel,
+.report-list-progress,
+.report-activity-panel {
+    padding: 18px;
+}
+
+.dashboard-list-panel h2,
+.report-list-progress h2,
+.progress-panel h2 {
+    margin: 4px 0 0;
+}
+
+.dashboard-list-grid,
+.report-progress-list {
+    display: grid;
+    gap: 10px;
+}
+
+.dashboard-list-card,
+.report-progress-row,
+.report-word-row {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text);
+    border-radius: 16px;
+    text-align: left;
+    transition: 0.18s ease;
+}
+
+.dashboard-list-card:hover,
+.report-progress-row:hover,
+.report-word-row:hover {
+    border-color: rgba(91, 228, 155, 0.42);
+    background: rgba(91, 228, 155, 0.08);
+}
+
+.dashboard-list-card p,
+.report-progress-row p {
+    margin: 4px 0 0;
+    color: var(--muted);
+    line-height: 1.45;
+}
+
+.dashboard-list-grid {
+    margin-top: 14px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dashboard-list-panel-focus {
+    min-height: min(620px, calc(100vh - 210px));
+}
+
+.dashboard-list-grid-featured {
+    gap: 14px;
+}
+
+.dashboard-list-card {
+    padding: 14px;
+}
+
+.dashboard-list-card-featured {
+    min-height: 230px;
+    display: grid;
+    gap: 12px;
+    align-content: start;
+}
+
+.dashboard-list-card-top {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+}
+
+.dashboard-list-card-top strong {
+    display: block;
+    color: var(--text);
+    font-size: 1.05rem;
+}
+
+.dashboard-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.dashboard-card-meta span {
+    padding: 6px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+.dashboard-card-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: auto;
+}
+
+.dashboard-card-actions .ghost-button,
+.dashboard-card-actions .primary-button {
+    padding: 9px 10px;
+    font-size: 0.86rem;
+}
+
+.dashboard-list-card small {
+    display: block;
+    margin-top: 10px;
+    color: var(--muted);
+}
+
+.report-progress-row {
+    padding: 14px;
+    display: grid;
+    grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.3fr);
+    gap: 16px;
+    align-items: center;
+}
+
+.report-progress-meter span {
+    display: block;
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+.report-word-row {
+    cursor: pointer;
+}
+
+.report-activity-panel .panel-head {
+    align-items: flex-start;
+}
+
 .intro-panel,
 .progress-panel {
     padding: 16px;
@@ -1670,6 +1902,10 @@ button {
     }
 
     .dashboard-grid,
+    .dashboard-stat-grid,
+    .dashboard-list-grid,
+    .report-stat-row,
+    .report-word-grid,
     .vocab-list-grid,
     .workspace-grid,
     .practice-layout,
@@ -1700,6 +1936,8 @@ button {
     }
 
     .top-bar,
+    .dashboard-hero,
+    .report-hero,
     .vocab-hero,
     .vocab-workspace-head,
     .study-hub-head,
@@ -1724,6 +1962,7 @@ button {
 
     .hero-topline,
     .panel-head,
+    .report-progress-row,
     .detail-actions,
     .inline-form {
         flex-direction: column;
@@ -1760,6 +1999,15 @@ button {
 
     .study-target-stats {
         justify-content: flex-start;
+    }
+
+    .dashboard-hero-actions {
+        justify-content: flex-start;
+    }
+
+    .report-progress-row {
+        display: grid;
+        grid-template-columns: 1fr;
     }
 
     .vocab-word-row {

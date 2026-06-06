@@ -1551,10 +1551,23 @@ function App() {
         );
     };
 
-    const activeWordCount = activeList?.words.length ?? 0;
     const quizScore = quizSession.questions.length ? Math.round((quizSession.correctCount / quizSession.questions.length) * 100) : 0;
     const learnScore = learnSession.questions.length ? Math.round((learnSession.correctCount / learnSession.questions.length) * 100) : 0;
-    const overviewWords = shuffle(state.lists.flatMap((list) => list.words)).slice(0, 8);
+    const allWordsWithList = useMemo(() => state.lists.flatMap((list) => list.words.map((word) => ({ word, list }))), [state.lists]);
+    const weakWords = useMemo(() => [...allWordsWithList].sort((a, b) => a.word.score - b.word.score).slice(0, 8), [allWordsWithList]);
+    const masteredWords = useMemo(() => [...allWordsWithList]
+        .filter(({ word }) => word.mastered)
+        .sort((a, b) => b.word.score - a.word.score)
+        .slice(0, 8), [allWordsWithList]);
+    const listProgress = useMemo(() => state.lists.map((list) => {
+        const average = Math.round(list.words.reduce((sum, word) => sum + word.score, 0) / Math.max(1, list.words.length));
+        const mastered = list.words.filter((word) => word.mastered).length;
+        const weakCount = list.words.filter((word) => word.score < 60).length;
+        return { list, average, mastered, weakCount };
+    }), [state.lists]);
+    const reviewTarget = useMemo(() => [...listProgress]
+        .sort((a, b) => b.weakCount - a.weakCount || a.average - b.average)
+        .find((item) => item.list.words.length > 0) ?? null, [listProgress]);
     const activityStats = useMemo(() => getActivityStats(), []);
 
     // 阅读生词悬浮弹窗
@@ -1629,6 +1642,25 @@ function App() {
         setQuizPhase('setup');
         setReadingPassage('');
         setReadingTranslation('');
+    };
+    const openWordInVocab = (listId: string, wordId: string) => {
+        setState((current) => ({ ...current, activeListId: listId }));
+        setSelectedWordId(wordId);
+        setWordImageUrl('');
+        setListView('workspace');
+        setWordDrawerOpen(true);
+        setActiveTab('lists');
+    };
+    const startReviewForList = (listId: string) => {
+        const nextList = state.lists.find((list) => list.id === listId);
+        handleStudyListChange(listId);
+        setActiveTab('learn');
+        setStudyMode('flashcard');
+        setLearnSubTab('flashcard');
+        setFlashcardWords(nextList ? shuffle([...nextList.words]) : []);
+        setFlashcardIndex(0);
+        setFlashcardFlipped(false);
+        setFlashcardKnown(0);
     };
 
     const renderSettingsContent = () => {
@@ -1859,57 +1891,83 @@ function App() {
                 {message && <div className="toast">{message}</div>}
 
                 {activeTab === 'overview' && (
-                    <section className="dashboard-grid">
-                        <div className="panel intro-panel">
-                            <p className="eyebrow">快速上手</p>
-                            <h2 style={{ fontSize: '1.1rem', margin: '6px 0' }}>词表 → 加词 → 练习</h2>
-                            <ol className="roadmap-list">
-                                <li>创建词表并选定场景</li>
-                                <li>手动或由 AI 生成新单词</li>
-                                <li>学习 + 测验 + 阅读 + 语音</li>
-                                <li>跟踪每词掌握进度</li>
-                            </ol>
-                        </div>
-                        <div className="panel intro-panel">
-                            <p className="eyebrow">当前词表</p>
-                            <h2 style={{ fontSize: '1.1rem', margin: '6px 0' }}>{activeList?.name ?? '暂无词表'}</h2>
-                            <p className="muted-text">{activeList?.context ?? '先创建一个词表。'}</p>
-                            <div className="glass-stat" style={{ marginTop: 12 }}>
-                                <span>单词</span>
-                                <strong>{activeWordCount}</strong>
+                    <section className="dashboard-home dashboard-wordlist-home">
+                        <div className="panel dashboard-hero">
+                            <div>
+                                <p className="eyebrow">Dashboard</p>
+                                <h2>从一个词表开始学习</h2>
+                                <p className="muted-text">
+                                    WordForge 的学习闭环以场景词表为单位展开：先整理词表，再进入阅读、卡片、测验和口语练习。
+                                </p>
+                            </div>
+                            <div className="dashboard-hero-actions">
+                                <button className="primary-button" type="button" onClick={() => {
+                                    setActiveTab('lists');
+                                    setListView('hall');
+                                    setShowCreateListModal(true);
+                                }}>创建词表</button>
+                                <button className="ghost-button" type="button" onClick={() => {
+                                    setActiveTab('lists');
+                                    setListView('hall');
+                                }}>管理词库</button>
+                            </div>
+                            <div className="dashboard-overview-stats">
+                                <span>{stats.listCount} 个词表</span>
+                                <span>{stats.wordCount} 个单词</span>
+                                <span>{stats.averageScore}% 平均掌握</span>
                             </div>
                         </div>
-                        <div className="panel intro-panel">
-                            <p className="eyebrow">统计</p>
-                            <h2 style={{ fontSize: '1.1rem', margin: '6px 0' }}>{stats.averageScore}% 平均掌握度</h2>
-                            <div className="glass-stat" style={{ marginTop: 12 }}>
-                                <span>已掌握 / 总词</span>
-                                <strong>{stats.masteredCount} / {stats.wordCount}</strong>
+
+                        <section className="panel dashboard-list-panel dashboard-list-panel-focus">
+                            <div className="panel-head">
+                                <div>
+                                    <p className="eyebrow">Word Lists</p>
+                                    <h2>我的词表</h2>
+                                    <p className="muted-text">选择一个词表进入工作台，或把它带入学习首页选择练习方式。</p>
+                                </div>
+                                <button className="ghost-button" type="button" onClick={() => setActiveTab('progress')}>学习报告</button>
                             </div>
-                        </div>
-                        <div className="panel intro-panel" style={{ gridColumn: '1 / -1' }}>
-                            <p className="eyebrow">最近单词</p>
-                            <h2 style={{ fontSize: '1.1rem', margin: '6px 0' }}>点击任意单词跳转详情</h2>
-                            <div className="overview-word-grid" style={{ marginTop: 8 }}>
-                                {overviewWords.map((word) => (
-                                    <button key={word.id} type="button" className="overview-word-card" onClick={() => {
-                                        const list = state.lists.find((l) => l.words.some((w) => w.id === word.id));
-                                        if (list) {
-                                            setState((current) => ({ ...current, activeListId: list.id }));
-                                            setSelectedWordId(word.id);
-                                            setListView('workspace');
-                                            setWordDrawerOpen(true);
-                                            setActiveTab('lists');
-                                        }
-                                    }}>
-                                        <span className="word-tag">{word.mastered ? '已掌握' : '学习中'}</span>
-                                        <h3>{word.term}</h3>
-                                        <p>{word.meaning}</p>
-                                        <small>{word.example}</small>
-                                    </button>
+                            <div className="dashboard-list-grid dashboard-list-grid-featured">
+                                {listProgress.map(({ list, average, mastered, weakCount }) => (
+                                    <article key={list.id} className="dashboard-list-card dashboard-list-card-featured">
+                                        <div className="dashboard-list-card-top">
+                                            <span className={`list-color list-${list.color}`} />
+                                            <div>
+                                                <strong>{list.name}</strong>
+                                                <p>{list.context}</p>
+                                            </div>
+                                        </div>
+                                        <div className="dashboard-card-meta">
+                                            <span>{list.words.length} 个单词</span>
+                                            <span>{average}% 掌握</span>
+                                            <span>{weakCount} 个待复习</span>
+                                        </div>
+                                        <div className="progress-track">
+                                            <div className="progress-fill" style={{ width: `${average}%` }} />
+                                        </div>
+                                        <small>{mastered}/{list.words.length} 已掌握</small>
+                                        <div className="dashboard-card-actions">
+                                            <button className="ghost-button" type="button" onClick={() => {
+                                                setState((current) => ({ ...current, activeListId: list.id }));
+                                                setListView('workspace');
+                                                setActiveTab('lists');
+                                            }}>
+                                                进入工作台
+                                            </button>
+                                            <button className="primary-button" type="button" onClick={() => {
+                                                handleStudyListChange(list.id);
+                                                enterStudyMode('hub');
+                                            }}>
+                                                去学习
+                                            </button>
+                                        </div>
+                                    </article>
                                 ))}
+                                {listProgress.length === 0 && (
+                                    <div className="empty-state">还没有词表。创建一个场景词表后，首页会围绕词表展示学习入口。</div>
+                                )}
                             </div>
-                        </div>
+                        </section>
                     </section>
                 )}
 
@@ -3044,77 +3102,137 @@ function App() {
                 )}
 
                 {activeTab === 'progress' && (
-                    <section className="dashboard-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-                        <div className="panel progress-panel">
-                            <p className="eyebrow">整体进度</p>
-                            <h2>{stats.averageScore}% 平均掌握度</h2>
-                            <div className="progress-bars">
-                                {[...state.lists].sort((a, b) => {
-                                    const aAvg = Math.round(a.words.reduce((s, w) => s + w.score, 0) / Math.max(1, a.words.length));
-                                    const bAvg = Math.round(b.words.reduce((s, w) => s + w.score, 0) / Math.max(1, b.words.length));
-                                    return aAvg - bAvg;
-                                }).map((list) => {
-                                    const total = list.words.length || 1;
-                                    const mastered = list.words.filter((word) => word.mastered).length;
-                                    const average = Math.round(list.words.reduce((sum, word) => sum + word.score, 0) / total);
+                    <section className="progress-report">
+                        <div className="panel report-hero">
+                            <div>
+                                <p className="eyebrow">Progress Report</p>
+                                <h2>学习报告</h2>
+                                <p className="muted-text">这里负责复盘长期表现：哪些词表进展好，哪些词该回到学习流程里再练。</p>
+                            </div>
+                            <button
+                                className="primary-button"
+                                type="button"
+                                onClick={() => reviewTarget ? startReviewForList(reviewTarget.list.id) : enterStudyMode('hub')}
+                            >
+                                {reviewTarget ? '复习薄弱词表' : '进入学习首页'}
+                            </button>
+                        </div>
 
-                                    return (
-                                        <div key={list.id} className="progress-card">
-                                            <div className="progress-card-head">
-                                                <strong>{list.name}</strong>
-                                                <span>{mastered}/{list.words.length} 已掌握</span>
-                                            </div>
+                        <div className="report-stat-row">
+                            <div className="panel dashboard-stat-card">
+                                <span>平均掌握度</span>
+                                <strong>{stats.averageScore}%</strong>
+                                <p>全部词表综合分</p>
+                            </div>
+                            <div className="panel dashboard-stat-card">
+                                <span>已掌握单词</span>
+                                <strong>{stats.masteredCount}</strong>
+                                <p>{stats.wordCount ? Math.round((stats.masteredCount / stats.wordCount) * 100) : 0}% 完成率</p>
+                            </div>
+                            <div className="panel dashboard-stat-card">
+                                <span>今日练习</span>
+                                <strong>{activityStats.todayCount}</strong>
+                                <p>本月 {activityStats.monthSolved} 次</p>
+                            </div>
+                            <div className="panel dashboard-stat-card">
+                                <span>连续练习</span>
+                                <strong>{activityStats.streak}</strong>
+                                <p>连续提交天数</p>
+                            </div>
+                        </div>
+
+                        <section className="panel report-list-progress">
+                            <div className="panel-head">
+                                <div>
+                                    <p className="eyebrow">By Word List</p>
+                                    <h2>各词表掌握度</h2>
+                                </div>
+                                <span className="muted-pill">低分词优先显示</span>
+                            </div>
+                            <div className="report-progress-list">
+                                {[...listProgress].sort((a, b) => a.average - b.average).map(({ list, average, mastered, weakCount }) => (
+                                    <button
+                                        key={list.id}
+                                        className="report-progress-row"
+                                        type="button"
+                                        onClick={() => {
+                                            setState((current) => ({ ...current, activeListId: list.id }));
+                                            setListView('workspace');
+                                            setActiveTab('lists');
+                                        }}
+                                    >
+                                        <div>
+                                            <strong>{list.name}</strong>
+                                            <p>{list.context}</p>
+                                        </div>
+                                        <div className="report-progress-meter">
                                             <div className="progress-track">
                                                 <div className="progress-fill" style={{ width: `${average}%` }} />
                                             </div>
-                                            <small>{average}% 平均分</small>
+                                            <span>{average}% · {mastered}/{list.words.length} 已掌握 · {weakCount} 待复习</span>
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        <div className="panel progress-panel">
-                            <p className="eyebrow">需要复习</p>
-                            <h2>最薄弱单词</h2>
-                            <div className="mini-progress-list">
-                                {state.lists.flatMap((l) => l.words).sort((a, b) => a.score - b.score).slice(0, 6).map((word) => (
-                                    <div key={word.id} className="mini-progress-item">
-                                        <div>
-                                            <strong>{word.term}</strong>
-                                            <p>{word.meaning}</p>
-                                        </div>
-                                        <span style={{ color: word.score < 40 ? 'var(--danger)' : 'var(--accent-alt)' }}>{word.score}%</span>
-                                    </div>
+                                    </button>
                                 ))}
-                                {stats.wordCount === 0 && <div className="empty-state">还没有单词。</div>}
                             </div>
-                        </div>
+                        </section>
 
-                        <div className="panel progress-panel">
-                            <p className="eyebrow">掌握较好</p>
-                            <h2>已掌握单词</h2>
-                            <div className="mini-progress-list">
-                                {state.lists.flatMap((l) => l.words).filter((w) => w.mastered).sort((a, b) => b.score - a.score).slice(0, 6).map((word) => (
-                                    <div key={word.id} className="mini-progress-item">
-                                        <div>
-                                            <strong>{word.term}</strong>
-                                            <p>{word.meaning}</p>
-                                        </div>
-                                        <span style={{ color: 'var(--accent)' }}>{word.score}%</span>
+                        <div className="report-word-grid">
+                            <section className="panel progress-panel">
+                                <div className="panel-head">
+                                    <div>
+                                        <p className="eyebrow">Review First</p>
+                                        <h2>薄弱单词</h2>
                                     </div>
-                                ))}
-                                {stats.masteredCount === 0 && <div className="empty-state">暂无已掌握单词，继续练习吧。</div>}
-                            </div>
+                                    {reviewTarget && <button className="ghost-button" type="button" onClick={() => startReviewForList(reviewTarget.list.id)}>开始复习</button>}
+                                </div>
+                                <div className="mini-progress-list">
+                                    {weakWords.map(({ word, list }) => (
+                                        <button key={word.id} type="button" className="mini-progress-item report-word-row" onClick={() => openWordInVocab(list.id, word.id)}>
+                                            <div>
+                                                <strong>{word.term}</strong>
+                                                <p>{word.meaning}</p>
+                                            </div>
+                                            <span style={{ color: word.score < 40 ? 'var(--danger)' : 'var(--accent-alt)' }}>{word.score}%</span>
+                                        </button>
+                                    ))}
+                                    {stats.wordCount === 0 && <div className="empty-state">还没有单词。</div>}
+                                </div>
+                            </section>
+
+                            <section className="panel progress-panel">
+                                <div className="panel-head">
+                                    <div>
+                                        <p className="eyebrow">Mastered</p>
+                                        <h2>已掌握单词</h2>
+                                    </div>
+                                    <span className="muted-pill">{stats.masteredCount} 个</span>
+                                </div>
+                                <div className="mini-progress-list">
+                                    {masteredWords.map(({ word, list }) => (
+                                        <button key={word.id} type="button" className="mini-progress-item report-word-row" onClick={() => openWordInVocab(list.id, word.id)}>
+                                            <div>
+                                                <strong>{word.term}</strong>
+                                                <p>{word.meaning}</p>
+                                            </div>
+                                            <span style={{ color: 'var(--accent)' }}>{word.score}%</span>
+                                        </button>
+                                    ))}
+                                    {stats.masteredCount === 0 && <div className="empty-state">暂无已掌握单词，继续练习吧。</div>}
+                                </div>
+                            </section>
                         </div>
 
-                        <div className="panel progress-panel" style={{ gridColumn: '1 / -1' }}>
-                            <p className="eyebrow">打卡日历</p>
-                            <h2>练习记录</h2>
-                            <div className="activity-header">
-                                <div className="activity-stat"><span>连续提交</span><strong>{activityStats.streak} 天</strong></div>
-                                <div className="activity-stat"><span>本月解决</span><strong>{activityStats.monthSolved} 题</strong></div>
-                                <div className="activity-stat"><span>今日</span><strong>{activityStats.todayCount} 次</strong></div>
+                        <section className="panel progress-panel report-activity-panel">
+                            <div className="panel-head">
+                                <div>
+                                    <p className="eyebrow">Practice Calendar</p>
+                                    <h2>近一年练习热力图</h2>
+                                </div>
+                                <div className="activity-header">
+                                    <div className="activity-stat"><span>连续</span><strong>{activityStats.streak} 天</strong></div>
+                                    <div className="activity-stat"><span>本月</span><strong>{activityStats.monthSolved} 次</strong></div>
+                                    <div className="activity-stat"><span>今日</span><strong>{activityStats.todayCount} 次</strong></div>
+                                </div>
                             </div>
                             <div className="activity-grid">
                                 {activityStats.days.map((day) => (
@@ -3125,8 +3243,8 @@ function App() {
                                     />
                                 ))}
                             </div>
-                            <p className="muted-text" style={{ fontSize: '0.8rem', marginTop: 8 }}>近一年练习热力图 — 颜色越深练习次数越多</p>
-                        </div>
+                            <p className="muted-text" style={{ fontSize: '0.8rem', marginTop: 8 }}>颜色越深代表当天完成的练习次数越多。</p>
+                        </section>
                     </section>
                 )}
 
