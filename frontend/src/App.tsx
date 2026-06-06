@@ -68,6 +68,8 @@ interface UserSettings {
     speechLang: string;
 }
 
+type StudyMode = 'hub' | 'flashcard' | 'reading' | 'quiz' | 'voice' | 'materials';
+
 const defaultUserSettings: UserSettings = {
     apiKey: '',
     baseUrl: 'https://api.deepseek.com',
@@ -198,6 +200,7 @@ function App() {
     const [learnShowExplanationIndex, setLearnShowExplanationIndex] = useState<number | null>(null);
     const [quizShowExplanationIndex, setQuizShowExplanationIndex] = useState<number | null>(null);
     const [learnSubTab, setLearnSubTab] = useState<'flashcard' | 'reading'>('flashcard');
+    const [studyMode, setStudyMode] = useState<StudyMode>('hub');
     const [flashcardWords, setFlashcardWords] = useState<WordItem[]>([]);
     const [flashcardIndex, setFlashcardIndex] = useState(0);
     const [flashcardFlipped, setFlashcardFlipped] = useState(false);
@@ -676,7 +679,7 @@ function App() {
 
     // 进入需要资料能力的页面时刷新状态
     useEffect(() => {
-        if (activeTab === 'voice' || activeTab === 'lists') fetchRagStats();
+        if (activeTab === 'learn' || activeTab === 'lists') fetchRagStats();
     }, [activeTab]);
 
     // 从 PDF 资料提取单词
@@ -1561,7 +1564,7 @@ function App() {
     } | null>(null);
     const wordTooltipRef = useRef<HTMLDivElement>(null);
 
-    const activeNavId: TabId = activeTab === 'quiz' || activeTab === 'voice' ? 'learn' : activeTab;
+    const activeNavId: TabId = activeTab;
     const activeNavItem = NAV_ITEMS.find((item) => item.id === activeNavId) ?? NAV_ITEMS[0];
     const settingsMenu: Array<{ id: SettingsSection; label: string }> = [
         { id: 'model', label: '大模型配置' },
@@ -1570,6 +1573,63 @@ function App() {
         { id: 'data', label: '数据管理' },
         { id: 'about', label: '关于项目' }
     ];
+    const studyModeLabels: Record<StudyMode, string> = {
+        hub: '学习首页',
+        flashcard: '词义速记',
+        reading: 'AI 短文阅读',
+        quiz: '混合测验',
+        voice: '场景口语陪练',
+        materials: '资料问答'
+    };
+    const enterStudyMode = (mode: StudyMode) => {
+        setActiveTab('learn');
+        setStudyMode(mode);
+
+        if (mode === 'flashcard') {
+            setLearnSubTab('flashcard');
+            resetFlashcard();
+        }
+
+        if (mode === 'reading') {
+            setLearnSubTab('reading');
+        }
+
+        if (mode === 'quiz') {
+            setQuizPhase('setup');
+            setQuizQAnswered(false);
+            setQuizQSelected('');
+            setQuizSpellingInput('');
+            setQuizShowExplanation(false);
+        }
+
+        if (mode === 'voice') {
+            switchAgentMode('voice');
+        }
+
+        if (mode === 'materials') {
+            switchAgentMode('rag');
+            fetchRagStats();
+        }
+    };
+    const returnToStudyHub = () => {
+        if (voiceListening) {
+            stopVoiceChat();
+        }
+        setStudyMode('hub');
+        setActiveTab('learn');
+    };
+    const handleStudyListChange = (listId: string) => {
+        const nextList = state.lists.find((list) => list.id === listId);
+        setState((current) => ({ ...current, activeListId: listId }));
+        setSelectedWordId(nextList?.words[0]?.id ?? '');
+        setFlashcardWords(nextList ? shuffle([...nextList.words]) : []);
+        setFlashcardIndex(0);
+        setFlashcardFlipped(false);
+        setFlashcardKnown(0);
+        setQuizPhase('setup');
+        setReadingPassage('');
+        setReadingTranslation('');
+    };
 
     const renderSettingsContent = () => {
         if (settingsSection === 'model') {
@@ -1750,7 +1810,13 @@ function App() {
                                 key={item.id}
                                 type="button"
                                 className={`sidebar-nav-item ${activeNavId === item.id ? 'active' : ''}`}
-                                onClick={() => setActiveTab(item.id)}
+                                onClick={() => {
+                                    if (item.id === 'learn') {
+                                        returnToStudyHub();
+                                        return;
+                                    }
+                                    setActiveTab(item.id);
+                                }}
                             >
                                 <span>{item.label}</span>
                                 <small>{item.hint}</small>
@@ -1791,26 +1857,6 @@ function App() {
                 </div>
 
                 {message && <div className="toast">{message}</div>}
-
-                {(activeTab === 'learn' || activeTab === 'quiz' || activeTab === 'voice') && (
-                    <section className="study-mode-bar panel">
-                        <div>
-                            <p className="eyebrow">Study</p>
-                            <h2>沉浸学习</h2>
-                        </div>
-                        <div className="study-mode-actions">
-                            <button className={`mode-chip ${activeTab === 'learn' ? 'active' : ''}`} type="button" onClick={() => setActiveTab('learn')}>
-                                词义速记 / 短文阅读
-                            </button>
-                            <button className={`mode-chip ${activeTab === 'quiz' ? 'active' : ''}`} type="button" onClick={() => setActiveTab('quiz')}>
-                                混合测验
-                            </button>
-                            <button className={`mode-chip ${activeTab === 'voice' ? 'active' : ''}`} type="button" onClick={() => setActiveTab('voice')}>
-                                场景口语陪练
-                            </button>
-                        </div>
-                    </section>
-                )}
 
                 {activeTab === 'overview' && (
                     <section className="dashboard-grid">
@@ -2250,21 +2296,82 @@ function App() {
                     </>
                 )}
 
-                {activeTab === 'learn' && (
+                {activeTab === 'learn' && studyMode === 'hub' && (
+                    <section className="study-hub panel">
+                        <div className="study-hub-head">
+                            <div>
+                                <p className="eyebrow">Study Home</p>
+                                <h2>今天想怎么练？</h2>
+                                <p className="muted-text">先选目标词表，再选择一种沉浸练习方式。</p>
+                            </div>
+                            <label className="study-list-picker">
+                                目标词表
+                                <select value={state.activeListId} onChange={(event) => handleStudyListChange(event.target.value)}>
+                                    {state.lists.map((list) => (
+                                        <option key={list.id} value={list.id}>{list.name}</option>
+                                    ))}
+                                </select>
+                            </label>
+                        </div>
+
+                        <div className="study-target-card">
+                            <div>
+                                <span className={`clr-dot clr-${activeList?.color ?? 'mint'}`} />
+                                <strong>{activeList?.name ?? '暂无词表'}</strong>
+                                <p className="muted-text">{activeList?.context ?? '先去我的词库创建一个学习场景。'}</p>
+                            </div>
+                            <div className="study-target-stats">
+                                <span>{activeList?.words.length ?? 0} 个单词</span>
+                                <span>{activeList ? Math.round(activeList.words.reduce((sum, word) => sum + word.score, 0) / Math.max(activeList.words.length, 1)) : 0}% 平均掌握</span>
+                            </div>
+                        </div>
+
+                        <div className="study-card-grid">
+                            <button className="study-entry-card" type="button" onClick={() => enterStudyMode('flashcard')}>
+                                <span>词义速记</span>
+                                <strong>翻卡片记单词</strong>
+                                <p>适合快速复习当前词表，认识或不认识都会同步更新掌握度。</p>
+                            </button>
+                            <button className="study-entry-card" type="button" onClick={() => enterStudyMode('reading')}>
+                                <span>AI 短文阅读</span>
+                                <strong>在语境里理解词</strong>
+                                <p>把词表单词放进一段短文里，高亮重点词并支持全文翻译。</p>
+                            </button>
+                            <button className="study-entry-card" type="button" onClick={() => enterStudyMode('quiz')}>
+                                <span>混合测验</span>
+                                <strong>词义、拼写、完形一起练</strong>
+                                <p>答题后即时反馈，错误会暴露例句和正确答案。</p>
+                            </button>
+                            <button className="study-entry-card" type="button" onClick={() => enterStudyMode('voice')}>
+                                <span>场景口语陪练</span>
+                                <strong>和 AI 角色对话</strong>
+                                <p>基于当前词表场景进行英语口语角色扮演。</p>
+                            </button>
+                        </div>
+
+                        <button className="study-aux-card" type="button" onClick={() => enterStudyMode('materials')}>
+                            <div>
+                                <span>资料问答</span>
+                                <strong>基于已上传 PDF 提问</strong>
+                                <p>上传和提取生词已经归入“我的词库”，这里专注用资料辅助理解。</p>
+                            </div>
+                            <span className="muted-pill">{ragChunks > 0 ? `${ragFiles.length} 份资料 · ${ragChunks} 段` : '暂无资料'}</span>
+                        </button>
+                    </section>
+                )}
+
+                {activeTab === 'learn' && (studyMode === 'flashcard' || studyMode === 'reading') && (
                     <section className="practice-layout">
                         <section className="panel practice-panel">
                             <div className="panel-head">
                                 <div>
-                                    <p className="eyebrow">学习模式</p>
-                                    <h2>{learnSubTab === 'flashcard' ? '刷卡片' : '短文阅读'}</h2>
+                                    <p className="eyebrow">{activeList?.name ?? '当前词表'}</p>
+                                    <h2>{studyModeLabels[studyMode]}</h2>
                                 </div>
-                                <div className="difficulty-pills" style={{ display: 'inline-flex', gap: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 4 }}>
-                                    <button type="button" className={`difficulty-pill ${learnSubTab === 'flashcard' ? 'active' : ''}`} onClick={() => setLearnSubTab('flashcard')}>卡片</button>
-                                    <button type="button" className={`difficulty-pill ${learnSubTab === 'reading' ? 'active' : ''}`} onClick={() => setLearnSubTab('reading')}>阅读</button>
-                                </div>
+                                <button className="ghost-button" type="button" onClick={returnToStudyHub}>返回学习首页</button>
                             </div>
 
-                            {learnSubTab === 'flashcard' ? (
+                            {studyMode === 'flashcard' ? (
                                 <div className="flashcard-section">
                                     {!activeList || !activeList.words.length ? (
                                         <div className="empty-state">当前词表还没有单词，先添加几个词再开始。</div>
@@ -2362,7 +2469,7 @@ function App() {
                             )}
                         </section>
                         <aside className="panel practice-summary">
-                            {learnSubTab === 'flashcard' ? (
+                            {studyMode === 'flashcard' ? (
                                 <>
                                     <p className="eyebrow">卡片进度</p>
                                     <h2>{flashcardWords.length ? Math.round((flashcardKnown / flashcardWords.length) * 100) : 0}%</h2>
@@ -2402,14 +2509,19 @@ function App() {
                     </section>
                 )}
 
-                {activeTab === 'quiz' && (
+                {activeTab === 'learn' && studyMode === 'quiz' && (
                     <section className="practice-layout">
                         <section className="panel practice-panel">
                             {quizPhase === 'setup' && (
                                 <div style={{ padding: '20px 0', display: 'grid', gap: 20 }}>
                                     <div>
-                                        <p className="eyebrow">测验配置</p>
-                                        <h2 style={{ fontSize: '1.3rem', margin: '8px 0' }}>{activeList?.name ?? '请选择词表'}</h2>
+                                        <div className="panel-head" style={{ padding: 0 }}>
+                                            <div>
+                                                <p className="eyebrow">{activeList?.name ?? '请选择词表'}</p>
+                                                <h2 style={{ fontSize: '1.3rem', margin: '8px 0' }}>混合测验配置</h2>
+                                            </div>
+                                            <button className="ghost-button" type="button" onClick={returnToStudyHub}>返回学习首页</button>
+                                        </div>
                                         <p className="muted-text">词表共 {activeList?.words.length ?? 0} 个单词</p>
                                     </div>
 
@@ -2452,7 +2564,7 @@ function App() {
                                         </div>
                                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                                             <span className="muted-pill">第 {quizQIndex + 1} 题 / {quizQuestions.length} 题</span>
-                                            <button className="ghost-button" type="button" onClick={handleQuizReset} style={{ padding: '4px 10px', fontSize: '0.85rem' }}>退出</button>
+                                            <button className="ghost-button" type="button" onClick={returnToStudyHub} style={{ padding: '4px 10px', fontSize: '0.85rem' }}>退出</button>
                                         </div>
                                     </div>
 
@@ -2568,7 +2680,10 @@ function App() {
                                             <strong>{quizQScore}%</strong>
                                         </div>
                                     </div>
-                                    <button className="primary-button" type="button" onClick={handleQuizReset} style={{ marginTop: 12 }}>再来一次</button>
+                                    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                        <button className="primary-button" type="button" onClick={handleQuizReset} style={{ marginTop: 12 }}>再来一次</button>
+                                        <button className="ghost-button" type="button" onClick={returnToStudyHub} style={{ marginTop: 12 }}>返回学习首页</button>
+                                    </div>
                                 </div>
                             )}
                         </section>
@@ -2617,44 +2732,23 @@ function App() {
                     </section>
                 )}
 
-                {activeTab === 'voice' && (
+                {activeTab === 'learn' && (studyMode === 'voice' || studyMode === 'materials') && (
                     <section className="practice-layout">
                         <section className="panel practice-panel">
-                            {/* 模式切换 */}
                             <div className="panel-head">
                                 <div>
-                                    <p className="eyebrow">AI Agent</p>
-                                    <h2>智能学习助手</h2>
+                                    <p className="eyebrow">{activeList?.name ?? '当前词表'}</p>
+                                    <h2>{studyModeLabels[studyMode]}</h2>
                                 </div>
-                                <div className="agent-mode-tabs">
-                                    <button
-                                        className={`agent-mode-btn ${agentMode === 'voice' ? 'active' : ''}`}
-                                        onClick={() => switchAgentMode('voice')}
-                                    >
-                                        🎤 语音对话
-                                    </button>
-                                    <button
-                                        className={`agent-mode-btn ${agentMode === 'rag' ? 'active' : ''}`}
-                                        onClick={() => switchAgentMode('rag')}
-                                    >
-                                        📄 PDF 问答
-                                    </button>
-                                    <button
-                                        className={`agent-mode-btn ${agentMode === 'vision' ? 'active' : ''}`}
-                                        onClick={() => switchAgentMode('vision')}
-                                    >
-                                        📷 识图学词
-                                    </button>
-                                </div>
+                                <button className="ghost-button" type="button" onClick={returnToStudyHub}>返回学习首页</button>
                             </div>
 
-                            {/* 语音模式 */}
-                            {agentMode === 'voice' && (
+                            {studyMode === 'voice' && (
                                 <>
                                     <div className="panel-head" style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 0 }}>
                                         <div>
-                                            <p className="eyebrow">语音对话</p>
-                                            <h2>和 AI 口语练习</h2>
+                                            <p className="eyebrow">Voice Roleplay</p>
+                                            <h2>和 AI 进行场景对话</h2>
                                         </div>
                                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                                             <span className={`voice-status-dot ${voiceStatus}`} />
@@ -2699,13 +2793,12 @@ function App() {
                                 </>
                             )}
 
-                            {/* RAG 文字问答模式 */}
-                            {agentMode === 'rag' && (
+                            {studyMode === 'materials' && (
                                 <>
                                     <div className="panel-head" style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 0 }}>
                                         <div>
-                                            <p className="eyebrow">PDF 知识问答</p>
-                                            <h2>基于学习资料的问答</h2>
+                                            <p className="eyebrow">Material Q&A</p>
+                                            <h2>基于学习资料提问</h2>
                                         </div>
                                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                                             <span className={`voice-status-dot ${voiceStatus}`} />
@@ -2719,11 +2812,11 @@ function App() {
                                     <div className="voice-messages">
                                         {voiceDisplay.length === 0 && (
                                             <div className="empty-state">
-                                                <p><strong>RAG 知识问答</strong></p>
-                                                <p>上传 PDF 学习资料后，可以针对资料内容提问。AI 会自动检索相关段落来回答。</p>
+                                                <p><strong>资料问答</strong></p>
+                                                <p>你可以针对已上传的 PDF 学习资料提问，AI 会检索相关段落来回答。</p>
                                                 {ragChunks === 0 && (
                                                     <p className="muted-text" style={{ marginTop: 8 }}>
-                                                        💡 提示：先在右侧上传一份 PDF 文档。
+                                                        提示：先在“我的词库”的资料导入中上传一份 PDF 文档。
                                                     </p>
                                                 )}
                                             </div>
@@ -2776,65 +2869,6 @@ function App() {
                                     </div>
                                 </>
                             )}
-
-                            {/* 📷 识图学词模式 */}
-                            {agentMode === 'vision' && (
-                                <>
-                                    <div className="panel-head" style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 0 }}>
-                                        <div>
-                                            <p className="eyebrow">识图学词</p>
-                                            <h2>从图片发现新单词</h2>
-                                        </div>
-                                        {visionLoading && <span className="muted-text">检测中…</span>}
-                                    </div>
-
-                                    {!visionImage ? (
-                                        <div className="empty-state" style={{ minHeight: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12 }}>
-                                            <p>上传一张图片，AI 会自动识别其中的物品</p>
-                                            <p className="muted-text">鼠标悬停在物品上可查看英文名称</p>
-                                            <input type="file" accept="image/*" style={{ display: 'none' }} id="vision-file-input" onChange={handleVisionFileSelect} />
-                                            <button className="primary-button" type="button" onClick={() => document.getElementById('vision-file-input')?.click()} style={{ alignSelf: 'center', padding: '14px 28px' }}>
-                                                📷 上传图片
-                                            </button>
-                                            {!visionModel && <p className="muted-text" style={{ fontSize: '0.85rem' }}>正在加载 AI 模型…首次加载可能需要几秒</p>}
-                                        </div>
-                                    ) : (
-                                        <div style={{ position: 'relative', display: 'inline-block', width: '100%' }} onMouseMove={handleVisionMouseMove} onMouseLeave={() => setVisionHovered(null)}>
-                                            <img ref={visionImgRef} src={visionImage} alt="识别对象" style={{ width: '100%', borderRadius: 12, display: 'block' }} />
-                                            <canvas ref={visionCanvasRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
-                                            {visionHovered && (
-                                                <div style={{
-                                                    position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)',
-                                                    background: 'var(--panel)', border: '1px solid var(--panel-border)',
-                                                    borderRadius: 12, padding: '10px 16px', boxShadow: '0 8px 30px rgba(0,0,0,0.3)',
-                                                    display: 'flex', alignItems: 'center', gap: 10, zIndex: 10, whiteSpace: 'nowrap'
-                                                }}>
-                                                    <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>{visionHovered.class}</span>
-                                                    <button className="primary-button" type="button" style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-                                                        onClick={() => {
-                                                            const listId = activeList?.id;
-                                                            if (!listId) return notify('请先选择一个词表');
-                                                            fetch('http://localhost:5001/api/complete-word', {
-                                                                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                                                body: JSON.stringify({ term: visionHovered.class, context: activeList?.context || '通用' }),
-                                                                signal: AbortSignal.timeout(6000)
-                                                            }).then(r => r.json()).then(data => {
-                                                                setState((current) => addWordToList(current, listId, visionHovered.class, data.meaning || visionHovered.class, data.example || '', data.note || ''));
-                                                                notify(`已加入「${activeList?.name}」`);
-                                                            }).catch(() => {
-                                                                setState((current) => addWordToList(current, listId, visionHovered.class, ''));
-                                                                notify(`已加入「${activeList?.name}」`);
-                                                            });
-                                                        }}
-                                                    >➕ 加入词表</button>
-                                                </div>
-                                            )}
-                                            <button className="ghost-button" type="button" onClick={() => { setVisionImage(null); setVisionDetections([]); setVisionHovered(null); }}
-                                                style={{ position: 'absolute', top: 8, right: 8, padding: '4px 8px', fontSize: '0.8rem', background: 'rgba(0,0,0,0.5)' }}>✕ 换图</button>
-                                        </div>
-                                    )}
-                                </>
-                            )}
                         </section>
                         <aside className="panel practice-summary">
                             <p className="eyebrow">当前词表</p>
@@ -2848,44 +2882,8 @@ function App() {
                                 <strong>{activeList?.context ?? '-'}</strong>
                             </div>
 
-                            {agentMode === 'rag' && (<>
+                            {studyMode === 'materials' && (<>
                                 <hr className="divider" style={{ margin: '12px 0' }} />
-
-                                <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        accept=".pdf"
-                                        style={{ display: 'none' }}
-                                        onChange={handleFileSelect}
-                                    />
-                                    <button
-                                        className="primary-button"
-                                        type="button"
-                                        onClick={() => fileInputRef.current?.click()}
-                                        disabled={ragUploading}
-                                        style={{ flex: 1, padding: '8px 12px', fontSize: '0.85rem' }}
-                                    >
-                                        {ragUploading ? '上传中…' : '📄 上传 PDF'}
-                                    </button>
-                                    {ragFiles.length > 0 && (
-                                        <button
-                                            className="ghost-button danger"
-                                            type="button"
-                                            onClick={async () => {
-                                                try {
-                                                    await fetch('http://localhost:5001/api/rag/clear', { method: 'POST' });
-                                                    await fetchRagStats();
-                                                    notify('知识库已清空');
-                                                } catch { notify('清空失败'); }
-                                            }}
-                                            style={{ padding: '8px 10px', fontSize: '0.8rem' }}
-                                            title="清空知识库"
-                                        >
-                                            🗑
-                                        </button>
-                                    )}
-                                </div>
 
                                 {ragError && (
                                     <p className="muted-text" style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginBottom: 6 }}>
@@ -2893,7 +2891,11 @@ function App() {
                                     </p>
                                 )}
 
-                                {/* 已上传文件列表 */}
+                                <div className="summary-card wide">
+                                    <span>资料段落</span>
+                                    <strong>{ragChunks}</strong>
+                                </div>
+
                                 {ragFiles.length > 0 && (
                                     <div style={{ maxHeight: 180, overflowY: 'auto' }}>
                                         {ragFiles.slice().reverse().map((f, i) => (
@@ -2903,7 +2905,7 @@ function App() {
                                                 background: 'var(--bg-soft)', borderRadius: 8, fontSize: '0.8rem'
                                             }}>
                                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                                                    📄 {f.filename}
+                                                    {f.filename}
                                                 </span>
                                                 <span className="muted-text" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', marginLeft: 8 }}>
                                                     {f.chunks}段·{f.pages}页
@@ -2913,17 +2915,18 @@ function App() {
                                     </div>
                                 )}
 
-                                {ragChunks > 0 && (
-                                    <button
-                                        className="ghost-button"
-                                        type="button"
-                                        onClick={extractWordsFromRag}
-                                        disabled={extracting}
-                                        style={{ width: '100%', marginTop: 6, padding: '8px 12px', fontSize: '0.85rem' }}
-                                    >
-                                        {extracting ? '提取中…' : '📝 提取生词'}
-                                    </button>
-                                )}
+                                {ragChunks === 0 && <p className="muted-text settings-note">还没有可问答的资料。请先到词表工作台的“资料导入”模块上传 PDF。</p>}
+                                <button
+                                    className="ghost-button"
+                                    type="button"
+                                    onClick={() => {
+                                        setActiveTab('lists');
+                                        setListView('workspace');
+                                    }}
+                                    style={{ width: '100%', marginTop: 8, padding: '8px 12px', fontSize: '0.85rem' }}
+                                >
+                                    去词库导入资料
+                                </button>
                             </>)}
                         </aside>
                     </section>
