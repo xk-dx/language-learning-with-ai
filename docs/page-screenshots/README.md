@@ -31,7 +31,7 @@
 
 ## 4. Progress 学习报告
 
-- `4-progress-report-dark.png` / `4-progress-report-light.png`：学习报告，包含长期进度、薄弱词、掌握词和练习热力图。
+- `4-progress-report-dark.png` / `4-progress-report-light.png`：学习报告，包含长期进度、各词表掌握度、薄弱/已掌握单词摘要入口和练习热力图。
 
 ## 5. Settings 系统设置
 
@@ -39,9 +39,9 @@
 - `5.2-settings-image-dark.png` / `5.2-settings-image-light.png`：图片服务配置。
 - `5.3-settings-preference-dark.png` / `5.3-settings-preference-light.png`：学习偏好。
 - `5.4-settings-data-dark.png` / `5.4-settings-data-light.png`：数据管理。
-- `5.5-settings-about-dark.png` / `5.5-settings-about-light.png`：关于项目。
+- `5.5-settings-about-dark.png` / `5.5-settings-about-light.png`：关于项目，说明 WordForge 的词库优先理念。
 
 ## 6. Onboarding Modal 快速上手
 
-- `6.1-onboarding-quick-start-dark.png` / `6.1-onboarding-quick-start-light.png`：快速上手第一步。
-- `6.2-onboarding-ai-setup-dark.png` / `6.2-onboarding-ai-setup-light.png`：AI 配置引导。
+- `6.1-onboarding-quick-start-dark.png` / `6.1-onboarding-quick-start-light.png`：快速上手第一步，说明“创建词表 → 收集表达 → 开始练习”的场景学习路径。
+- `6.2-onboarding-ai-setup-dark.png` / `6.2-onboarding-ai-setup-light.png`：AI 配置引导，用于填写 AI Key、服务地址、模型名称和图片服务 Key。
