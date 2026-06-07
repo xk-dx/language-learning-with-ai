@@ -3135,7 +3135,7 @@ button {
     justify-self: start;
 }
 
-.voice-msg strong {
+.voice-msg > strong {
     display: block;
     margin-bottom: 6px;
     font-size: 0.85rem;

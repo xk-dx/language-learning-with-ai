@@ -92,7 +92,7 @@ def chat():
         response = client.chat.completions.create(
             model=DEFAULT_MODEL,
             messages=full_messages,
-            max_tokens=300,
+            max_tokens=1024,
             temperature=0.8
         )
         return jsonify({
@@ -434,6 +434,20 @@ def rag_clear():
     rag_engine.clear()
     return jsonify({'ok': True})
 
+
+@app.route('/api/rag/preload', methods=['POST'])
+def rag_preload():
+    """预加载 embedding 模型（首次使用时触发下载）"""
+    try:
+        # 发一条空 embedding 来触发模型加载
+        rag_engine.embedder.embed('ping')
+        return jsonify({'ok': True, 'model': rag_engine.embedder.model})
+    except Exception as e:
+        app.logger.exception('rag preload failed')
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/api/rag/diagnose', methods=['GET'])
 
 @app.route('/api/rag/extract-words', methods=['POST'])
 def rag_extract_words():

@@ -886,6 +886,8 @@ function App() {
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.error || '上传失败');
             await fetchRagStats();  // 刷新文件列表
+            // 预加载 embedding 模型，确保首次提问时立即可用
+            fetch('http://localhost:5001/api/rag/preload', { method: 'POST', signal: AbortSignal.timeout(60000) }).catch(() => {});
             notify(`PDF 已导入，共 ${data.chunks} 个段落`);
         } catch (err: any) {
             const msg = err?.message || 'PDF 上传失败';
@@ -1056,6 +1058,8 @@ function App() {
         try {
             let ragContext = '';
             let sources: { file: string; page: number }[] = [];
+            let ragFound = false;
+            let ragErrorMsg = '';
             try {
                 const ragResp = await fetch('http://localhost:5001/api/rag/search', {
                     method: 'POST',
@@ -1065,11 +1069,11 @@ function App() {
                 });
                 const ragData = await ragResp.json();
                 if (ragData?.results?.length) {
+                    ragFound = true;
                     sources = ragData.results.map((r: any) => ({
                         file: r.metadata?.source?.replace(/\.pdf$/i, '')?.split(/[/\\]/).pop() || '资料',
                         page: r.metadata?.page || 0
                     }));
-                    // 去重
                     const seen = new Set();
                     sources = sources.filter(s => {
                         const key = `${s.file}-${s.page}`;
@@ -1078,10 +1082,21 @@ function App() {
                         return true;
                     });
                     ragContext = ragData.results.map((r: any) =>
-                        `[来源: 第${r.metadata?.page || '?'}页] ${r.text}`
+                        `[来源: 第${r.metadata?.page || '?'}页(相似度${r.score})] ${r.text}`
                     ).join('\n\n');
                 }
-            } catch { /* ignore */ }
+            } catch (e: any) {
+                ragErrorMsg = e?.message || '检索超时或失败';
+            }
+
+            // 显示检索状态
+            if (!ragFound && ragChunks > 0) {
+                setVoiceDisplay((prev) => [...prev, { role: 'ai', text: `📡 已在 ${ragChunks} 段资料中检索，未找到相关内容。将用通用知识回答。` }]);
+            } else if (ragFound) {
+                setVoiceDisplay((prev) => [...prev, { role: 'ai', text: `📡 已检索到 ${sources.length} 条相关段落` }]);
+            } else if (ragErrorMsg) {
+                setVoiceDisplay((prev) => [...prev, { role: 'ai', text: `⚠️ 知识库检索异常: ${ragErrorMsg}。将用通用知识回答。` }]);
+            }
 
             // RAG 模式用中文回答，专注知识问答
             const ragPrompt = ragContext
@@ -1624,6 +1639,12 @@ function App() {
         if (mode === 'flashcard') {
             setLearnSubTab('flashcard');
             resetFlashcard();
+        }
+
+        if (mode === 'materials') {
+            // 进入资料问答时预加载 embedding 模型
+            fetch('http://localhost:5001/api/rag/preload', { method: 'POST', signal: AbortSignal.timeout(60000) })
+                .catch(() => {});
         }
 
         if (mode === 'reading') {
@@ -2959,9 +2980,12 @@ function App() {
                                                 <p>你可以针对已上传的 PDF 学习资料提问，AI 会检索相关段落来回答。</p>
                                                 {ragChunks === 0 && (
                                                     <p className="muted-text" style={{ marginTop: 8 }}>
-                                                        提示：先在“我的词库”的资料导入中上传一份 PDF 文档。
+                                                        💡 提示：先在“我的词库”的资料导入中上传一份 PDF 文档。
                                                     </p>
                                                 )}
+                                                <p className="muted-text" style={{ fontSize: '0.8rem', marginTop: 12, opacity: 0.6 }}>
+                                                    🔌 首次使用需要连接外网下载 AI 模型（~80MB），之后完全离线运行。
+                                                </p>
                                             </div>
                                         )}
                                         {voiceDisplay.map((msg, i) => (
