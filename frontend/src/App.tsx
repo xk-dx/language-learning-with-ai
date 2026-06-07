@@ -23,15 +23,34 @@ const STORAGE_KEY = 'wordpecker-mini-state-v1';
 const THEME_KEY = 'wordpecker-theme-v1';
 const ONBOARDING_KEY = 'wordforge-onboarding-v1';
 const SETTINGS_KEY = 'wordforge-user-settings-v1';
-const NAV_ITEMS: Array<{ id: TabId; label: string; hint: string }> = [
-    { id: 'overview', label: '仪表盘', hint: 'Dashboard' },
-    { id: 'lists', label: '我的词库', hint: 'Vocab' },
-    { id: 'learn', label: '沉浸学习', hint: 'Study' },
-    { id: 'progress', label: '学习报告', hint: 'Progress' },
-    { id: 'settings', label: '系统设置', hint: 'Settings' }
+const NAV_ITEMS: Array<{ id: TabId; label: string; hint: string; description: string }> = [
+    { id: 'overview', label: '仪表盘', hint: 'Dashboard', description: '从词表出发查看学习入口、当前进度和下一步建议。' },
+    { id: 'lists', label: '我的词库', hint: 'Vocab', description: '创建场景词表，收集单词，并用 AI、PDF 和图片补充语料。' },
+    { id: 'learn', label: '沉浸学习', hint: 'Study', description: '选择词表后进入阅读、卡片、测验、口语和资料问答。' },
+    { id: 'progress', label: '学习报告', hint: 'Progress', description: '复盘各词表掌握情况，发现薄弱词和长期练习趋势。' },
+    { id: 'settings', label: '系统设置', hint: 'Settings', description: '配置模型服务、图片服务、学习偏好和本地数据管理。' }
 ];
 
 const difficultyPills = ['入门', '日常', '进阶'];
+
+function WordForgeLogo({ variant = 'full', className = '' }: { variant?: 'icon' | 'full'; className?: string }) {
+    return (
+        <div className={`wordforge-logo wordforge-logo-${variant} ${className}`.trim()} aria-label="WordForge">
+            <svg className="wordforge-logo-mark" viewBox="0 0 48 48" role="img" aria-hidden="true">
+                <rect className="logo-mark-bg" x="4" y="4" width="40" height="40" rx="13" />
+                <path className="logo-book-left" d="M13 16.5c4.6-.9 8.2.1 10.8 3v15c-2.6-2.1-6.2-2.8-10.8-1.9v-16.1Z" />
+                <path className="logo-book-right" d="M35 16.5c-4.6-.9-8.2.1-10.8 3v15c2.6-2.1 6.2-2.8 10.8-1.9v-16.1Z" />
+                <path className="logo-book-spine" d="M24 19.5v15" />
+                <path className="logo-spark" d="M32.5 10.5l1.1 2.7 2.7 1.1-2.7 1.1-1.1 2.7-1.1-2.7-2.7-1.1 2.7-1.1 1.1-2.7Z" />
+            </svg>
+            {variant === 'full' && (
+                <span className="wordforge-logo-text">
+                    <strong>WordForge</strong>
+                </span>
+            )}
+        </div>
+    );
+}
 
 function loadState(): AppState {
     try {
@@ -1565,6 +1584,7 @@ function App() {
         const weakCount = list.words.filter((word) => word.score < 60).length;
         return { list, average, mastered, weakCount };
     }), [state.lists]);
+    const activeListProgress = useMemo(() => listProgress.find((item) => item.list.id === state.activeListId) ?? null, [listProgress, state.activeListId]);
     const reviewTarget = useMemo(() => [...listProgress]
         .sort((a, b) => b.weakCount - a.weakCount || a.average - b.average)
         .find((item) => item.list.words.length > 0) ?? null, [listProgress]);
@@ -1833,7 +1853,7 @@ function App() {
             <div className="app-layout">
                 <aside className="app-sidebar panel">
                     <div className="sidebar-brand">
-                        <span className="brand-mark">WordForge</span>
+                        <WordForgeLogo variant="full" />
                         <p>AI 英语学习平台</p>
                     </div>
                     <nav className="sidebar-nav">
@@ -1856,12 +1876,32 @@ function App() {
                         ))}
                     </nav>
                     <div className="sidebar-spacer" />
-                    {activeList && (
-                        <button className="current-list-badge sidebar-current-list" type="button" onClick={() => setActiveTab('lists')}>
-                            <span className={`clr-dot clr-${activeList.color}`} />
-                            <span>{activeList.name}</span>
-                        </button>
-                    )}
+                    <div className="sidebar-context">
+                        <p className="sidebar-context-label">当前词表</p>
+                        {activeList ? (
+                            <>
+                                <button className="current-list-badge sidebar-current-list" type="button" onClick={() => setActiveTab('lists')}>
+                                    <span className={`clr-dot clr-${activeList.color}`} />
+                                    <span>{activeList.name}</span>
+                                </button>
+                                <div className="sidebar-mini-meter">
+                                    <span style={{ width: `${activeListProgress?.average ?? 0}%` }} />
+                                </div>
+                                <div className="sidebar-context-stats">
+                                    <span>{activeList.words.length} 个词</span>
+                                    <span>{activeListProgress?.mastered ?? 0} 已掌握</span>
+                                </div>
+                                <button className="sidebar-context-action" type="button" onClick={() => {
+                                    handleStudyListChange(activeList.id);
+                                    enterStudyMode('hub');
+                                }}>
+                                    继续学习
+                                </button>
+                            </>
+                        ) : (
+                            <p className="muted-text">创建词表后，这里会显示当前学习场景。</p>
+                        )}
+                    </div>
                     <button
                         type="button"
                         className={`sidebar-nav-item sidebar-settings ${activeNavId === 'settings' ? 'active' : ''}`}
@@ -1875,9 +1915,10 @@ function App() {
             <main className="app-frame">
                 <div className="panel top-bar">
                     <div className="top-bar-left">
-                        <div>
-                            <p className="eyebrow">WordForge</p>
+                        <WordForgeLogo variant="icon" className="top-bar-logo" />
+                        <div className="top-bar-title">
                             <h1 className="page-title">{activeNavItem.label}</h1>
+                            <p className="top-bar-description">{activeNavItem.description}</p>
                         </div>
                     </div>
                     <div className="top-bar-right">
@@ -1893,28 +1934,30 @@ function App() {
                 {activeTab === 'overview' && (
                     <section className="dashboard-home dashboard-wordlist-home">
                         <div className="panel dashboard-hero">
-                            <div>
+                            <div className="dashboard-hero-copy">
                                 <p className="eyebrow">Dashboard</p>
                                 <h2>从一个词表开始学习</h2>
                                 <p className="muted-text">
                                     WordForge 的学习闭环以场景词表为单位展开：先整理词表，再进入阅读、卡片、测验和口语练习。
                                 </p>
                             </div>
-                            <div className="dashboard-hero-actions">
-                                <button className="primary-button" type="button" onClick={() => {
-                                    setActiveTab('lists');
-                                    setListView('hall');
-                                    setShowCreateListModal(true);
-                                }}>创建词表</button>
-                                <button className="ghost-button" type="button" onClick={() => {
-                                    setActiveTab('lists');
-                                    setListView('hall');
-                                }}>管理词库</button>
-                            </div>
-                            <div className="dashboard-overview-stats">
-                                <span>{stats.listCount} 个词表</span>
-                                <span>{stats.wordCount} 个单词</span>
-                                <span>{stats.averageScore}% 平均掌握</span>
+                            <div className="dashboard-hero-side">
+                                <div className="dashboard-overview-stats">
+                                    <span>{stats.listCount} 个词表</span>
+                                    <span>{stats.wordCount} 个单词</span>
+                                    <span>{stats.averageScore}% 平均掌握</span>
+                                </div>
+                                <div className="dashboard-hero-actions">
+                                    <button className="primary-button" type="button" onClick={() => {
+                                        setActiveTab('lists');
+                                        setListView('hall');
+                                        setShowCreateListModal(true);
+                                    }}>创建词表</button>
+                                    <button className="ghost-button" type="button" onClick={() => {
+                                        setActiveTab('lists');
+                                        setListView('hall');
+                                    }}>管理词库</button>
+                                </div>
                             </div>
                         </div>
 
@@ -1963,8 +2006,33 @@ function App() {
                                         </div>
                                     </article>
                                 ))}
-                                {listProgress.length === 0 && (
-                                    <div className="empty-state">还没有词表。创建一个场景词表后，首页会围绕词表展示学习入口。</div>
+                                {listProgress.length < 4 && (
+                                    <article className="dashboard-empty-guide">
+                                        <div className="dashboard-empty-illustration" aria-hidden="true">
+                                            <span />
+                                            <span />
+                                            <span />
+                                        </div>
+                                        <div>
+                                            <p className="eyebrow">Next Step</p>
+                                            <h3>{listProgress.length === 0 ? '先创建一个场景词表' : '补充更多学习场景'}</h3>
+                                            <p className="muted-text">
+                                                建议把词汇按真实场景拆分，比如旅行、课堂讨论、论文汇报。场景越清楚，后面的阅读、测验和口语练习越贴近日常使用。
+                                            </p>
+                                            <div className="dashboard-empty-steps">
+                                                <span>1. 选场景</span>
+                                                <span>2. 加入核心词</span>
+                                                <span>3. 进入练习</span>
+                                            </div>
+                                        </div>
+                                        <button className="primary-button" type="button" onClick={() => {
+                                            setActiveTab('lists');
+                                            setListView('hall');
+                                            setShowCreateListModal(true);
+                                        }}>
+                                            创建词表
+                                        </button>
+                                    </article>
                                 )}
                             </div>
                         </section>
@@ -2022,6 +2090,23 @@ function App() {
                                             </article>
                                         );
                                     })}
+                                    {state.lists.length < 4 && (
+                                        <article className="panel vocab-list-card vocab-list-placeholder">
+                                            <div className="vocab-placeholder-illustration" aria-hidden="true">
+                                                <span />
+                                                <span />
+                                                <span />
+                                            </div>
+                                            <div>
+                                                <p className="eyebrow">New Scenario</p>
+                                                <h3>{state.lists.length === 0 ? '创建第一个词表' : '继续添加学习场景'}</h3>
+                                                <p className="muted-text">把词汇按真实任务拆开管理，比如课堂讨论、论文汇报、旅行沟通或产品展示。</p>
+                                            </div>
+                                            <button className="primary-button" type="button" onClick={() => setShowCreateListModal(true)}>
+                                                创建词表
+                                            </button>
+                                        </article>
+                                    )}
                                 </div>
                             </section>
                         ) : !activeList ? (
@@ -2208,7 +2293,7 @@ function App() {
                                                     <strong>{visionDetections.length ? `${visionDetections.length} 个候选物体` : '等待检测'}</strong>
                                                 </div>
                                             )}
-                                            {!visionModel && <p className="muted-text settings-note">正在加载本地识图模型，首次使用可能需要几秒。</p>}
+                                            {!visionModel && <p className="muted-text settings-note">正在准备图片识词能力，首次使用可能需要几秒。</p>}
                                         </div>
                                     </aside>
                                 </div>
@@ -2263,12 +2348,12 @@ function App() {
                                             <div>
                                                 <p className="eyebrow">Upload</p>
                                                 <h3>上传一张场景图片</h3>
-                                                <p className="muted-text">例如咖啡店、机场、办公室或课堂照片。识别模型在浏览器本地运行，图片不会上传到后端。</p>
+                                                <p className="muted-text">例如咖啡店、机场、办公室或课堂照片。上传后可从图片中的物体名称快速补充当前词表。</p>
                                             </div>
                                             <button className="primary-button" type="button" onClick={() => document.getElementById('vocab-vision-modal-file-input')?.click()}>
                                                 上传图片
                                             </button>
-                                            {!visionModel && <p className="muted-text settings-note">正在加载本地识图模型，首次加载可能需要几秒。</p>}
+                                            {!visionModel && <p className="muted-text settings-note">正在准备图片识词能力，首次使用可能需要几秒。</p>}
                                         </div>
                                     ) : (
                                         <div className="vision-modal-body">
@@ -3026,7 +3111,7 @@ function App() {
                         <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
                             <div className="panel-head">
                                 <div>
-                                    <p className="eyebrow">词汇提取</p>
+                                    <p className="eyebrow">Vocabulary Extraction</p>
                                     <h2>资料中的重点词汇</h2>
                                 </div>
                                 <button className="ghost-button" type="button" onClick={() => setExtractedWords([])}>✕</button>
