@@ -675,6 +675,66 @@ button {
     gap: 18px;
 }
 
+.report-word-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.report-word-summary-card {
+    padding: 18px;
+    display: grid;
+    gap: 16px;
+    align-content: start;
+}
+
+.report-word-summary-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: start;
+}
+
+.report-word-summary-top h2 {
+    margin: 4px 0 6px;
+}
+
+.report-word-summary-top strong {
+    min-width: 64px;
+    text-align: right;
+    font-size: clamp(2rem, 4vw, 3rem);
+    line-height: 1;
+    color: var(--accent);
+}
+
+.report-word-preview {
+    min-height: 40px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-content: start;
+}
+
+.report-word-preview span {
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: rgba(var(--accent-rgb), 0.10);
+    color: var(--text);
+    font-size: 0.84rem;
+}
+
+.report-word-summary-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+}
+
+.report-word-summary-actions.single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .dashboard-list-panel,
 .report-list-progress,
 .report-activity-panel {
@@ -898,6 +958,53 @@ button {
 
 .report-word-row {
     cursor: pointer;
+}
+
+.report-word-row small {
+    display: block;
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+.report-word-modal {
+    width: min(720px, calc(100vw - 40px));
+    max-width: 720px;
+    max-height: min(760px, calc(100vh - 48px));
+    gap: 16px;
+}
+
+.report-word-modal .panel-head {
+    align-items: flex-start;
+    gap: 16px;
+    flex: 0 0 auto;
+}
+
+.report-word-modal .panel-head .ghost-button {
+    flex: 0 0 auto;
+    min-width: 76px;
+    white-space: nowrap;
+}
+
+.report-word-modal .panel-head h2 {
+    margin: 4px 0 6px;
+}
+
+.report-word-modal .panel-head .muted-text {
+    margin: 0;
+}
+
+.report-word-modal-list {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    display: grid;
+    gap: 10px;
+    padding-right: 4px;
+}
+
+.report-word-modal-list .report-word-row {
+    border-radius: 14px;
 }
 
 .report-activity-panel .panel-head {
@@ -1658,7 +1765,9 @@ button {
 .study-hub {
     padding: 22px;
     display: grid;
+    grid-template-rows: auto auto auto auto;
     gap: 18px;
+    align-content: start;
 }
 
 .study-hub-head {
@@ -1739,6 +1848,7 @@ button {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
+    align-content: start;
 }
 
 .study-entry-card,
@@ -1752,7 +1862,12 @@ button {
     text-align: left;
     display: grid;
     gap: 8px;
+    align-content: start;
     transition: 0.18s ease;
+}
+
+.study-entry-card {
+    min-height: 158px;
 }
 
 .study-entry-card:hover,
@@ -1782,8 +1897,7 @@ button {
 }
 
 .study-aux-card {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
+    min-height: 132px;
 }
 
 .settings-layout {
@@ -2258,6 +2372,7 @@ button {
     .dashboard-list-grid,
     .report-stat-row,
     .report-word-grid,
+    .report-word-summary-grid,
     .vocab-list-grid,
     .workspace-grid,
     .practice-layout,
@@ -2390,6 +2505,8 @@ button {
     .study-mode-actions,
     .study-card-grid,
     .study-aux-card,
+    .report-word-summary-grid,
+    .report-word-summary-actions,
     .vocab-inline-controls,
     .vision-modal-body,
     .onboarding-config-grid {
@@ -3082,6 +3199,7 @@ button {
 
 .activity-stat {
     flex: 1;
+    min-width: 82px;
     padding: 12px;
     border-radius: 14px;
     border: 1px solid var(--line);
@@ -3100,6 +3218,7 @@ button {
     margin-top: 4px;
     font-size: 1.2rem;
     color: var(--text);
+    white-space: nowrap;
 }
 
 .activity-grid {

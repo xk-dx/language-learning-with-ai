@@ -88,6 +88,7 @@ interface UserSettings {
 }
 
 type StudyMode = 'hub' | 'flashcard' | 'reading' | 'quiz' | 'voice' | 'materials';
+type ReportWordPanel = 'weak' | 'mastered' | null;
 
 const defaultUserSettings: UserSettings = {
     apiKey: '',
@@ -231,6 +232,7 @@ function App() {
     const [userSettings, setUserSettings] = useState<UserSettings>(() => loadUserSettings());
     const [configStatus, setConfigStatus] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle');
     const [configMessage, setConfigMessage] = useState('尚未测试连接。');
+    const [reportWordPanel, setReportWordPanel] = useState<ReportWordPanel>(null);
     const messageTimer = useRef<number | null>(null);
 
     const activeList = useMemo(() => getActiveList(state), [state]);
@@ -1101,7 +1103,7 @@ function App() {
             setVoiceHistory((prev) => [...prev, { role: 'assistant', content: reply }]);
             setVoiceStatus('idle');
         } catch {
-            setVoiceDisplay((prev) => [...prev, { role: 'ai', text: '网络连接失败，请检查后端是否运行。' }]);
+            setVoiceDisplay((prev) => [...prev, { role: 'ai', text: '网络连接失败，请稍后重试。' }]);
             setVoiceStatus('idle');
         }
     };
@@ -1294,7 +1296,7 @@ function App() {
 
     const handleTestConnection = async () => {
         setConfigStatus('checking');
-        setConfigMessage('正在连接后端配置接口...');
+        setConfigMessage('正在检查模型服务连接...');
 
         try {
             const resp = await fetch('http://localhost:5001/api/config', {
@@ -1307,10 +1309,10 @@ function App() {
             }
 
             setConfigStatus('ok');
-            setConfigMessage(`后端在线：${data.default_model ?? '未知模型'} · ${data.openai_base_url ?? '未知地址'}`);
+            setConfigMessage(`模型服务已连接：${data.default_model ?? '默认模型'}`);
         } catch (err: any) {
             setConfigStatus('error');
-            setConfigMessage(err?.message === 'The operation was aborted' ? '连接超时，请确认 Flask 后端是否运行。' : '未连接到后端，请确认 http://localhost:5001 已启动。');
+            setConfigMessage(err?.message === 'The operation was aborted' ? '连接超时，请稍后重试。' : '暂时无法连接模型服务。');
         }
     };
 
@@ -1573,11 +1575,12 @@ function App() {
     const quizScore = quizSession.questions.length ? Math.round((quizSession.correctCount / quizSession.questions.length) * 100) : 0;
     const learnScore = learnSession.questions.length ? Math.round((learnSession.correctCount / learnSession.questions.length) * 100) : 0;
     const allWordsWithList = useMemo(() => state.lists.flatMap((list) => list.words.map((word) => ({ word, list }))), [state.lists]);
-    const weakWords = useMemo(() => [...allWordsWithList].sort((a, b) => a.word.score - b.word.score).slice(0, 8), [allWordsWithList]);
+    const weakWords = useMemo(() => [...allWordsWithList]
+        .filter(({ word }) => word.score < 60)
+        .sort((a, b) => a.word.score - b.word.score), [allWordsWithList]);
     const masteredWords = useMemo(() => [...allWordsWithList]
         .filter(({ word }) => word.mastered)
-        .sort((a, b) => b.word.score - a.word.score)
-        .slice(0, 8), [allWordsWithList]);
+        .sort((a, b) => b.word.score - a.word.score), [allWordsWithList]);
     const listProgress = useMemo(() => state.lists.map((list) => {
         const average = Math.round(list.words.reduce((sum, word) => sum + word.score, 0) / Math.max(1, list.words.length));
         const mastered = list.words.filter((word) => word.mastered).length;
@@ -1697,7 +1700,7 @@ function App() {
                             type="password"
                             value={userSettings.apiKey}
                             onChange={(event) => updateUserSetting('apiKey', event.target.value)}
-                            placeholder="本地保存，用于后续接入配置接口"
+                            placeholder="用于启用 AI 释义、阅读和对话"
                         />
                     </label>
                     <label>
@@ -1723,7 +1726,7 @@ function App() {
                         </button>
                     </div>
                     <p className="muted-text settings-note">
-                        当前后端仍优先读取 `backend_flask/.env`，这里先保存本地配置并检测 Flask 服务状态。
+                        配置完成后，AI 释义、短文阅读、测验生成和场景对话会使用这组模型服务。
                     </p>
                 </div>
             );
@@ -1746,7 +1749,7 @@ function App() {
                         />
                     </label>
                     <p className="muted-text settings-note">
-                        当前图片搜索接口由 Flask 后端代理，真实运行配置仍以 `.env` 中的 `PEXELS_API_KEY` 为准。
+                        配置图片服务后，单词详情页可以为重点词补充更直观的配图。
                     </p>
                 </div>
             );
@@ -1832,14 +1835,14 @@ function App() {
                     <h2>关于 WordForge</h2>
                 </div>
                 <p className="muted-text">
-                    WordForge 是面向同济大学 HCI 课程大作业的 AI 英语学习平台，本轮重构会按“配置与入门 → 建词表/收集词 → 沉浸练习 → 复盘再练习”的闭环推进。
+                    WordForge 是一个以“词库”为核心的 AI 英语学习产品。你可以围绕旅行、课堂、咖啡店等真实场景建立词表，把单词、例句、图片和资料片段收进同一个学习单元，再从这个词表出发阅读、测验、口语练习和复盘。
                 </p>
                 <div className="settings-action-row">
                     <div>
-                        <strong>当前版本</strong>
-                        <p className="muted-text">React 18 + Vite + Flask + OpenAI-compatible SDK</p>
+                        <strong>核心理念</strong>
+                        <p className="muted-text">先建立属于自己的场景词库，再让学习、练习和报告都围绕词库循环展开。</p>
                     </div>
-                    <span className="muted-pill">Local-first</span>
+                    <span className="muted-pill">Word-list first</span>
                 </div>
             </div>
         );
@@ -2493,12 +2496,9 @@ function App() {
                         </div>
 
                         <button className="study-aux-card" type="button" onClick={() => enterStudyMode('materials')}>
-                            <div>
-                                <span>资料问答</span>
-                                <strong>基于已上传 PDF 提问</strong>
-                                <p>上传和提取生词已经归入“我的词库”，这里专注用资料辅助理解。</p>
-                            </div>
-                            <span className="muted-pill">{ragChunks > 0 ? `${ragFiles.length} 份资料 · ${ragChunks} 段` : '暂无资料'}</span>
+                            <span>{ragChunks > 0 ? `资料问答 · ${ragFiles.length} 份资料` : '资料问答'}</span>
+                            <strong>基于已上传 PDF 提问</strong>
+                            <p>上传和提取生词已经归入“我的词库”，这里专注用资料辅助理解。</p>
                         </button>
                     </section>
                 )}
@@ -3261,48 +3261,45 @@ function App() {
                             </div>
                         </section>
 
-                        <div className="report-word-grid">
-                            <section className="panel progress-panel">
-                                <div className="panel-head">
+                        <div className="report-word-summary-grid">
+                            <section className="panel report-word-summary-card">
+                                <div className="report-word-summary-top">
                                     <div>
                                         <p className="eyebrow">Review First</p>
                                         <h2>薄弱单词</h2>
+                                        <p className="muted-text">低于 60% 的词集中收纳，点击后在弹窗里查看完整列表。</p>
                                     </div>
-                                    {reviewTarget && <button className="ghost-button" type="button" onClick={() => startReviewForList(reviewTarget.list.id)}>开始复习</button>}
+                                    <strong>{weakWords.length}</strong>
                                 </div>
-                                <div className="mini-progress-list">
-                                    {weakWords.map(({ word, list }) => (
-                                        <button key={word.id} type="button" className="mini-progress-item report-word-row" onClick={() => openWordInVocab(list.id, word.id)}>
-                                            <div>
-                                                <strong>{word.term}</strong>
-                                                <p>{word.meaning}</p>
-                                            </div>
-                                            <span style={{ color: word.score < 40 ? 'var(--danger)' : 'var(--accent-alt)' }}>{word.score}%</span>
-                                        </button>
+                                <div className="report-word-preview">
+                                    {weakWords.slice(0, 4).map(({ word }) => (
+                                        <span key={word.id}>{word.term}</span>
                                     ))}
-                                    {stats.wordCount === 0 && <div className="empty-state">还没有单词。</div>}
+                                    {weakWords.length === 0 && <span>暂无薄弱词</span>}
+                                </div>
+                                <div className="report-word-summary-actions">
+                                    <button className="ghost-button" type="button" onClick={() => setReportWordPanel('weak')}>查看详情</button>
+                                    {reviewTarget && <button className="primary-button" type="button" onClick={() => startReviewForList(reviewTarget.list.id)}>开始复习</button>}
                                 </div>
                             </section>
 
-                            <section className="panel progress-panel">
-                                <div className="panel-head">
+                            <section className="panel report-word-summary-card">
+                                <div className="report-word-summary-top">
                                     <div>
                                         <p className="eyebrow">Mastered</p>
                                         <h2>已掌握单词</h2>
+                                        <p className="muted-text">已达掌握标准的词统一折叠，报告页只保留数量和快速预览。</p>
                                     </div>
-                                    <span className="muted-pill">{stats.masteredCount} 个</span>
+                                    <strong>{masteredWords.length}</strong>
                                 </div>
-                                <div className="mini-progress-list">
-                                    {masteredWords.map(({ word, list }) => (
-                                        <button key={word.id} type="button" className="mini-progress-item report-word-row" onClick={() => openWordInVocab(list.id, word.id)}>
-                                            <div>
-                                                <strong>{word.term}</strong>
-                                                <p>{word.meaning}</p>
-                                            </div>
-                                            <span style={{ color: 'var(--accent)' }}>{word.score}%</span>
-                                        </button>
+                                <div className="report-word-preview">
+                                    {masteredWords.slice(0, 4).map(({ word }) => (
+                                        <span key={word.id}>{word.term}</span>
                                     ))}
-                                    {stats.masteredCount === 0 && <div className="empty-state">暂无已掌握单词，继续练习吧。</div>}
+                                    {masteredWords.length === 0 && <span>暂无已掌握词</span>}
+                                </div>
+                                <div className="report-word-summary-actions single">
+                                    <button className="ghost-button" type="button" onClick={() => setReportWordPanel('mastered')}>查看详情</button>
                                 </div>
                             </section>
                         </div>
@@ -3331,6 +3328,57 @@ function App() {
                             <p className="muted-text" style={{ fontSize: '0.8rem', marginTop: 8 }}>颜色越深代表当天完成的练习次数越多。</p>
                         </section>
                     </section>
+                )}
+
+                {reportWordPanel && (
+                    <div className="modal-overlay report-word-modal-overlay" role="presentation" onClick={() => setReportWordPanel(null)}>
+                        <section
+                            className="modal-panel report-word-modal"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="report-word-modal-title"
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            <div className="panel-head">
+                                <div>
+                                    <p className="eyebrow">{reportWordPanel === 'weak' ? 'Review First' : 'Mastered'}</p>
+                                    <h2 id="report-word-modal-title">{reportWordPanel === 'weak' ? '薄弱单词' : '已掌握单词'}</h2>
+                                    <p className="muted-text">
+                                        {reportWordPanel === 'weak'
+                                            ? '按掌握度从低到高排列，点击任意单词可回到词表工作台查看详情。'
+                                            : '按掌握度从高到低排列，点击任意单词可回到词表工作台查看详情。'}
+                                    </p>
+                                </div>
+                                <button className="ghost-button" type="button" onClick={() => setReportWordPanel(null)}>关闭</button>
+                            </div>
+
+                            <div className="report-word-modal-list">
+                                {(reportWordPanel === 'weak' ? weakWords : masteredWords).map(({ word, list }) => (
+                                    <button
+                                        key={`${list.id}-${word.id}`}
+                                        type="button"
+                                        className="mini-progress-item report-word-row"
+                                        onClick={() => {
+                                            setReportWordPanel(null);
+                                            openWordInVocab(list.id, word.id);
+                                        }}
+                                    >
+                                        <div>
+                                            <strong>{word.term}</strong>
+                                            <p>{word.meaning}</p>
+                                            <small>{list.name}</small>
+                                        </div>
+                                        <span style={{ color: reportWordPanel === 'weak' && word.score < 40 ? 'var(--danger)' : 'var(--accent)' }}>{word.score}%</span>
+                                    </button>
+                                ))}
+                                {(reportWordPanel === 'weak' ? weakWords : masteredWords).length === 0 && (
+                                    <div className="empty-state">
+                                        {reportWordPanel === 'weak' ? '目前没有低分词。' : '暂无已掌握单词，继续练习吧。'}
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    </div>
                 )}
 
                 {activeTab === 'settings' && (
@@ -3368,34 +3416,34 @@ function App() {
                                         <p className="eyebrow">Quick Start</p>
                                         <h2>从一个真实场景开始学英语</h2>
                                         <p className="muted-text" style={{ margin: '8px 0 0' }}>
-                                            WordForge 的核心不是背一串孤立单词，而是围绕你马上会遇到的语境，快速建立一组能拿来用的词汇。
+                                            先选一个你真的会用到的场景，再围绕它建立词库、补充表达、进入练习。
                                         </p>
                                     </div>
                                     <div className="onboarding-scenario">
                                         <p className="eyebrow">Example</p>
                                         <h3>比如：你想练“咖啡店聊天”</h3>
-                                        <p>系统会围绕点单、推荐、闲聊这些场景，帮你收集相关表达，再把这些词放进卡片、短文、测验和口语对话里反复使用。</p>
+                                        <p>把点单、推荐、闲聊相关的词收进同一个词表，后续练习都会围绕它展开。</p>
                                     </div>
                                     <div className="onboarding-steps">
                                         <div className="onboarding-step">
                                             <strong>1</strong>
                                             <div>
-                                                <h3>先定场景</h3>
-                                                <p>创建一个词表：名称填“咖啡店聊天”，场景填“朋友见面、点单、闲聊”。</p>
+                                                <h3>创建词表</h3>
+                                                <p>用一个真实场景命名，比如“咖啡店聊天”。</p>
                                             </div>
                                         </div>
                                         <div className="onboarding-step">
                                             <strong>2</strong>
                                             <div>
-                                                <h3>再补语料</h3>
-                                                <p>输入 order、recommend 这类词，AI 可以补全释义、例句，也能继续发现同场景的新词。</p>
+                                                <h3>收集表达</h3>
+                                                <p>手动添加单词，或让 AI 帮你发现同场景表达。</p>
                                             </div>
                                         </div>
                                         <div className="onboarding-step">
                                             <strong>3</strong>
                                             <div>
-                                                <h3>最后放进练习</h3>
-                                                <p>用卡片记住意思，用短文理解语境，再通过测验和口语陪练确认自己真的会用。</p>
+                                                <h3>开始练习</h3>
+                                                <p>用卡片、阅读、测验和口语把词真正用起来。</p>
                                             </div>
                                         </div>
                                     </div>
@@ -3408,14 +3456,14 @@ function App() {
                                 <>
                                     <div>
                                         <p className="eyebrow">AI Setup</p>
-                                        <h2>让场景学习真正跑起来</h2>
+                                        <h2>配置 AI 学习能力</h2>
                                         <p className="muted-text" style={{ margin: '8px 0 0' }}>
-                                            AI 补全释义、生成短文、场景口语陪练都依赖后端模型服务。这里先确认连接状态；不配置也可以先用示例词表和本地兜底功能体验。
+                                            填入可用的 AI 配置后，释义补全、短文阅读和口语陪练会更完整。也可以先跳过，稍后再设置。
                                         </p>
                                     </div>
                                     <div className="onboarding-config-grid">
                                         <label>
-                                            API Key
+                                            AI Key
                                             <input
                                                 type="password"
                                                 value={userSettings.apiKey}
@@ -3424,21 +3472,21 @@ function App() {
                                             />
                                         </label>
                                         <label>
-                                            Base URL
+                                            服务地址
                                             <input
                                                 value={userSettings.baseUrl}
                                                 onChange={(event) => updateUserSetting('baseUrl', event.target.value)}
                                             />
                                         </label>
                                         <label>
-                                            默认模型
+                                            模型名称
                                             <input
                                                 value={userSettings.defaultModel}
                                                 onChange={(event) => updateUserSetting('defaultModel', event.target.value)}
                                             />
                                         </label>
                                         <label>
-                                            Pexels Key
+                                            图片服务 Key
                                             <input
                                                 type="password"
                                                 value={userSettings.pexelsKey}
@@ -3448,7 +3496,7 @@ function App() {
                                         </label>
                                     </div>
                                     <div className="config-status config-idle">
-                                        <span>当前运行时仍以 Flask 后端 `.env` 为准，这里会本地保存你的填写并用于后续配置入口。</span>
+                                        <span>完成后可以测试一次，确认 AI 功能是否可用。</span>
                                         <button className="secondary-button" type="button" onClick={handleTestConnection} disabled={configStatus === 'checking'}>
                                             {configStatus === 'checking' ? '测试中' : '测试连接'}
                                         </button>
